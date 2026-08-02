@@ -10,5 +10,7 @@ namespace MarbookApi.Models
         public DateOnly Birthdate { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+
+        public ICollection<Post> Posts { get; set; } = new List<Post>();
     }
 }
