@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MarbookApi")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+ef605d5747f19c627bc3918fdc70c9b833067856")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+7466558f412805d22bedf2ad01d8ef5d31112c7e")]
 [assembly: System.Reflection.AssemblyProductAttribute("MarbookApi")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MarbookApi")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
