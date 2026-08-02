@@ -9,6 +9,7 @@ namespace MarbookApi.Data
         {
         }
         public DbSet<User> Users { get; set; }
+        public DbSet<Post> Posts { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -46,6 +47,25 @@ namespace MarbookApi.Data
                     .HasDefaultValueSql("NOW()");
                 entity.Property(u => u.UpdatedAt)
                     .HasDefaultValueSql("NOW()");
+            });
+            modelBuilder.Entity<Post>(entity =>
+            {
+                entity.HasKey(p => p.Id);
+
+                entity.Property(p => p.Content)
+                    .IsRequired()
+                    .HasMaxLength(500);
+                
+                entity.Property(p => p.CreatedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.Property(p => p.UpdatedAt)
+                    .HasDefaultValueSql("NOW()");
+                
+                entity.HasOne(p => p.User)
+                    .WithMany(u => u.Posts)
+                    .HasForeignKey(p => p.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
             });
         }
     }
