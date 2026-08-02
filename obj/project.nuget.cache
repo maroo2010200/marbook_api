@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "rKtg6gugKEs=",
+  "success": true,
+  "projectFilePath": "E:\\MarbookApi\\MarbookApi.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Marshmallow\\.nuget\\packages\\microsoft.aspnetcore.openapi\\10.0.10\\microsoft.aspnetcore.openapi.10.0.10.nupkg.sha512",
+    "C:\\Users\\Marshmallow\\.nuget\\packages\\microsoft.openapi\\3.9.0\\microsoft.openapi.3.9.0.nupkg.sha512"
+  ],
+  "logs": []
+}
