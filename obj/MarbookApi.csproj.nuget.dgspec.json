@@ -64,11 +64,15 @@
             },
             "Microsoft.OpenApi": {
               "target": "Package",
-              "version": "[3.9.0, )"
+              "version": "[2.7.5, )"
             },
             "Npgsql.EntityFrameworkCore.PostgreSQL": {
               "target": "Package",
               "version": "[10.0.3, )"
+            },
+            "Swashbuckle.AspNetCore": {
+              "target": "Package",
+              "version": "[10.2.3, )"
             }
           },
           "imports": [
