@@ -11,6 +11,7 @@ namespace MarbookApi.Data
         public DbSet<User> Users { get; set; }
         public DbSet<Post> Posts { get; set; }
         public DbSet<Comment> Comments { get; set; }
+        public DbSet<Like> Likes { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -49,6 +50,7 @@ namespace MarbookApi.Data
                 entity.Property(u => u.UpdatedAt)
                     .HasDefaultValueSql("NOW()");
             });
+            
             modelBuilder.Entity<Post>(entity =>
             {
                 entity.HasKey(p => p.Id);
@@ -68,6 +70,7 @@ namespace MarbookApi.Data
                     .HasForeignKey(p => p.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
+
             modelBuilder.Entity<Comment>(entity =>
             {
                 entity.HasKey(c => c.Id);
@@ -90,6 +93,30 @@ namespace MarbookApi.Data
                 entity.HasOne(c => c.Post)
                     .WithMany(p => p.Comments)
                     .HasForeignKey(c => c.PostId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<Like>(entity =>
+            {
+                entity.HasKey(l => l.Id);
+
+                entity.HasIndex(l => new { l.UserId, l.PostId })
+                    .IsUnique();
+
+                entity.Property(l => l.CreatedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.Property(l => l.UpdatedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.HasOne(l => l.User)
+                    .WithMany(u => u.Likes)
+                    .HasForeignKey(l => l.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(l => l.Post)
+                    .WithMany(p => p.Likes)
+                    .HasForeignKey(l => l.PostId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
         }
