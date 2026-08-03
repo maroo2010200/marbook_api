@@ -8,7 +8,5 @@ public class CommentCreateDto
     public string Content { get; set; } = string.Empty;
 
     [Required]
-    public int PostId { get; set; }
-    [Required]
     public int UserId { get; set; }
 }
