@@ -70,7 +70,7 @@ namespace MarbookApi.Controllers
                 Name = userDto.Name,
                 Username = userDto.Username,
                 Email = userDto.Email,
-                Password = BCrypt.Net.BCrypt.HashPassword(userDto.Password),
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(userDto.Password),
                 Birthdate = userDto.Birthdate,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
@@ -99,7 +99,7 @@ namespace MarbookApi.Controllers
 
             user.Name = userDto.Name;
             user.Email = userDto.Email;
-            user.Password = BCrypt.Net.BCrypt.HashPassword(userDto.Password);
+            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(userDto.Password);
             user.Birthdate = userDto.Birthdate;
 
             if (userDto.Username != null)

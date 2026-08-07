@@ -39,7 +39,8 @@ namespace MarbookApi.Data
                 entity.HasIndex(u => u.Email)
                     .IsUnique();
                 
-                entity.Property(u => u.Password)
+                entity.Property(u => u.PasswordHash)
+                    .HasColumnName("Password")
                     .IsRequired();
                 
                 entity.Property(u => u.Birthdate)
