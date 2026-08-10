@@ -1,5 +1,6 @@
 using MarbookApi;
 using MarbookApi.Data;
+using MarbookApi.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -14,6 +15,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddOpenApi();
+builder.Services.AddScoped<IJwtService, JwtService>();
 
 var app = builder.Build();
 
