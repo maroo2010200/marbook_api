@@ -8,14 +8,9 @@ namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/posts/{postId:int}/[controller]")]
-    public class LikesController : ControllerBase
+    public class LikesController(AppDbContext dbContext) : ControllerBase
     {
-        private readonly AppDbContext _dbContext;
-
-        public LikesController(AppDbContext dbContext)
-        {
-            _dbContext = dbContext;
-        }
+        private readonly AppDbContext _dbContext = dbContext;
 
         [HttpPost]
         public async Task<ActionResult<Like>> CreateLike(int postId, LikeCreateDto likeCreateDto)

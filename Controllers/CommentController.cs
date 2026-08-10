@@ -8,14 +8,9 @@ namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/posts/{postId:int}/[controller]")]
-    public class CommentsController : ControllerBase
+    public class CommentsController(AppDbContext dbContext) : ControllerBase
     {
-        private readonly AppDbContext _dbContext;
-
-        public CommentsController(AppDbContext dbContext)
-        {
-            _dbContext = dbContext;
-        }
+        private readonly AppDbContext _dbContext = dbContext;
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<CommentResponseDto>>> GetComments(int postId)

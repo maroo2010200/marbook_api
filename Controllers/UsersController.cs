@@ -8,13 +8,9 @@ namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class UserController : ControllerBase
+    public class UserController(AppDbContext dbContext) : ControllerBase
     {
-        private readonly AppDbContext _dbContext;
-        public UserController(AppDbContext dbContext)
-        {
-            _dbContext = dbContext;
-        }
+        private readonly AppDbContext _dbContext = dbContext;
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<User>>> GetUsers()

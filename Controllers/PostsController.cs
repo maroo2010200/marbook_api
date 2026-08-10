@@ -8,13 +8,9 @@ namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class PostsController : ControllerBase
+    public class PostsController(AppDbContext dbContext) : ControllerBase
     {
-        private readonly AppDbContext _dbContext;
-        public PostsController(AppDbContext dbContext)
-        {
-            _dbContext = dbContext;
-        }
+        private readonly AppDbContext _dbContext = dbContext;
     
         [HttpGet]
         public async Task<ActionResult<IEnumerable<Post>>> GetPosts()
