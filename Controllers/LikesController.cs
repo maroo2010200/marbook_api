@@ -61,6 +61,12 @@ namespace MarbookApi.Controllers
                 return NotFound();
             }
 
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            if(like.UserId != userId)
+            {
+                return Forbid();
+            }
+
             _dbContext.Likes.Remove(like);
             await _dbContext.SaveChangesAsync();
 

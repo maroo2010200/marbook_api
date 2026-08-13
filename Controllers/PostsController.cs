@@ -102,6 +102,12 @@ namespace MarbookApi.Controllers
                 return NotFound();
             }
 
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            if(post.UserId != userId)
+            {
+                return Forbid();
+            }
+
             post.Content = postDto.Content;
             post.UpdatedAt = DateTime.UtcNow;
 
@@ -117,6 +123,12 @@ namespace MarbookApi.Controllers
             if (post == null)
             {
                 return NotFound();
+            }
+
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            if(post.UserId != userId)
+            {
+                return Forbid();
             }
 
             _dbContext.Posts.Remove(post);

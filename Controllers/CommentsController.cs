@@ -86,6 +86,12 @@ namespace MarbookApi.Controllers
                 return NotFound();
             }
 
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            if(comment.UserId != userId)
+            {
+                return Forbid();
+            }
+
             comment.Content = commentUpdateDto.Content;
             comment.UpdatedAt = DateTime.UtcNow;
 
@@ -101,6 +107,12 @@ namespace MarbookApi.Controllers
             if (comment == null)
             {
                 return NotFound();
+            }
+
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            if(comment.UserId != userId)
+            {
+                return Forbid();
             }
 
             _dbContext.Comments.Remove(comment);
