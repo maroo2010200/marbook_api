@@ -3,16 +3,19 @@ using Microsoft.AspNetCore.Mvc;
 using MarbookApi.Models;
 using MarbookApi.DTOs;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 
 namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/posts/{postId:int}/[controller]")]
+    [Authorize]
     public class CommentsController(AppDbContext dbContext) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
 
         [HttpGet]
+        [AllowAnonymous]
         public async Task<ActionResult<IEnumerable<CommentResponseDto>>> GetComments(int postId)
         {
             var comments = await _dbContext.Comments

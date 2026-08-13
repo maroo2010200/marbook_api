@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Mvc;
 using MarbookApi.Models;
 using MarbookApi.DTOs;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
 
 namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/posts/{postId:int}/[controller]")]
+    [Authorize]
     public class LikesController(AppDbContext dbContext) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;

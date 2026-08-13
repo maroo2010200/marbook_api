@@ -1,6 +1,7 @@
 using MarbookApi.Data;
 using MarbookApi.DTOs;
 using MarbookApi.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -8,11 +9,13 @@ namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class PostsController(AppDbContext dbContext) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
     
         [HttpGet]
+        [AllowAnonymous]
         public async Task<ActionResult<IEnumerable<Post>>> GetPosts()
         {
             var posts = await _dbContext.Posts
@@ -31,6 +34,7 @@ namespace MarbookApi.Controllers
         }
 
         [HttpGet("{id:int}")]
+        [AllowAnonymous]
         public async Task<ActionResult<PostResponseDto>> GetPost(int id)
         {
             var post = await _dbContext.Posts
