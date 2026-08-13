@@ -47,12 +47,12 @@ public class AuthController(AppDbContext dbContext, IJwtService jwtService) : Co
         _dbContext.Users.Add(user);
         await _dbContext.SaveChangesAsync();
 
-        var token = _jwtService.GenerateToken(user);
+        var (token, expiresAt) = _jwtService.GenerateToken(user);
 
         return Ok(new AuthResponseDto
         {
             Token = token,
-            ExpiresAt = DateTime.UtcNow.AddMinutes(60)
+            ExpiresAt = expiresAt
         });
     }
 
@@ -66,12 +66,12 @@ public class AuthController(AppDbContext dbContext, IJwtService jwtService) : Co
             return Unauthorized("Invalid email or password.");
         }
 
-        var token = _jwtService.GenerateToken(user);
+        var (token, expiresAt) = _jwtService.GenerateToken(user);
 
         return Ok(new AuthResponseDto
         {
             Token = token,
-            ExpiresAt = DateTime.UtcNow.AddMinutes(60)
+            ExpiresAt = expiresAt
         });
     }
 }

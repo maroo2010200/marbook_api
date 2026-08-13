@@ -17,7 +17,7 @@ public class JwtService : IJwtService
         _jwtOptions = jwtOptions.Value;
     }
 
-    public string GenerateToken(User user)
+    public (string Token, DateTime ExpiresAt) GenerateToken(User user)
     {
         var claims = new List<Claim>
         {
@@ -35,15 +35,19 @@ public class JwtService : IJwtService
             SecurityAlgorithms.HmacSha256
         );
 
+        var expiresAt = DateTime.UtcNow.AddMinutes(_jwtOptions.LifetimeInMinutes);
+
         var token = new JwtSecurityToken(
             issuer: _jwtOptions.Issuer,
             audience: _jwtOptions.Audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(_jwtOptions.LifetimeInMinutes),
+            expires: expiresAt,
             signingCredentials: credentials
         );
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+        var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
+
+        return (tokenString, expiresAt);
     }
     
 }
