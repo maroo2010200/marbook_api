@@ -4,6 +4,7 @@ using MarbookApi.Models;
 using MarbookApi.DTOs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace MarbookApi.Controllers
 {
@@ -44,7 +45,8 @@ namespace MarbookApi.Controllers
                 return NotFound();
             }
 
-            var user = await _dbContext.Users.FindAsync(commentCreateDto.UserId);
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var user = await _dbContext.Users.FindAsync(userId);
             if (user == null)
             {
                 return BadRequest("Invalid UserId.");
@@ -53,7 +55,7 @@ namespace MarbookApi.Controllers
             var comment = new Comment
             {
                 Content = commentCreateDto.Content,
-                UserId = commentCreateDto.UserId,
+                UserId = userId,
                 PostId = postId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow

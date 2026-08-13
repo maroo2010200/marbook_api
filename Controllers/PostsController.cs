@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
 using MarbookApi.Models;
@@ -59,18 +60,20 @@ namespace MarbookApi.Controllers
         }
 
         [HttpPost]
-        public async Task<ActionResult<Post>> CreatePost(PostCreateDto postDto)
+        public async Task<ActionResult<PostResponseDto>> CreatePost(PostCreateDto postDto)
         {
-            var user = await _dbContext.Users.FindAsync(postDto.UserId);
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            var user = await _dbContext.Users.FindAsync(userId);
             if (user == null)
             {
-                return NotFound($"User with ID {postDto.UserId} not found.");
+                return NotFound($"User with ID {userId} not found.");
             }
 
             var post = new Post
             {
                 Content = postDto.Content,
-                UserId = postDto.UserId,
+                UserId = userId,
                 CreatedAt = DateTime.UtcNow
             };
 

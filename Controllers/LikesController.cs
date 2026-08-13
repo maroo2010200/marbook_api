@@ -4,6 +4,7 @@ using MarbookApi.Models;
 using MarbookApi.DTOs;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace MarbookApi.Controllers
 {
@@ -15,7 +16,7 @@ namespace MarbookApi.Controllers
         private readonly AppDbContext _dbContext = dbContext;
 
         [HttpPost]
-        public async Task<ActionResult<Like>> CreateLike(int postId, LikeCreateDto likeCreateDto)
+        public async Task<ActionResult<Like>> CreateLike(int postId)
         {
             var post = await _dbContext.Posts.FindAsync(postId);
             if (post == null)
@@ -23,14 +24,15 @@ namespace MarbookApi.Controllers
                 return NotFound("Post not found.");
             }
 
-            var user = await _dbContext.Users.FindAsync(likeCreateDto.UserId);
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var user = await _dbContext.Users.FindAsync(userId);
             if (user == null)
             {
                 return BadRequest("Invalid UserId.");
             }
 
             var existingLike = await _dbContext.Likes
-                .FirstOrDefaultAsync(l => l.PostId == postId && l.UserId == likeCreateDto.UserId);
+                .FirstOrDefaultAsync(l => l.PostId == postId && l.UserId == userId);
             if (existingLike != null)
             {
                 return Conflict("User has already liked this post.");
@@ -39,7 +41,7 @@ namespace MarbookApi.Controllers
             var like = new Like
             {
                 PostId = postId,
-                UserId = likeCreateDto.UserId,
+                UserId = userId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
