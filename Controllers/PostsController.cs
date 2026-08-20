@@ -17,10 +17,17 @@ namespace MarbookApi.Controllers
     
         [HttpGet]
         [AllowAnonymous]
-        public async Task<ActionResult<IEnumerable<Post>>> GetPosts()
+        public async Task<ActionResult<PagedResult<PostResponseDto>>> GetPosts( [FromQuery] PaginationParams pagination)
         {
-            var posts = await _dbContext.Posts
-            .OrderByDescending(p => p.CreatedAt)
+            var query = _dbContext.Posts.Include(p => p.User).OrderByDescending(p => p.CreatedAt);
+
+            var totalCount = await query.CountAsync();
+
+            var skip = (pagination.PageNumber - 1) * pagination.PageSize;
+
+            var posts = await query
+            .Skip(skip)
+            .Take(pagination.PageSize)
             .Select(p => new PostResponseDto
             {
                 Id = p.Id,
@@ -29,9 +36,16 @@ namespace MarbookApi.Controllers
                 CreatedAt = p.CreatedAt,
                 UpdatedAt = p.UpdatedAt,
                 UserId = p.UserId
-            }).ToListAsync();
+            })
+            .ToListAsync();
 
-            return Ok(posts);
+            return Ok(new PagedResult<PostResponseDto>
+            {
+                Items = posts,
+                TotalCount = totalCount,
+                PageNumber = pagination.PageNumber,
+                PageSize = pagination.PageSize
+            });
         }
 
         [HttpGet("{id:int}")]

@@ -17,23 +17,35 @@ namespace MarbookApi.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        public async Task<ActionResult<IEnumerable<CommentResponseDto>>> GetComments(int postId)
+        public async Task<ActionResult<PagedResult<CommentResponseDto>>> GetComments(int postId, [FromQuery] PaginationParams pagination)
         {
-            var comments = await _dbContext.Comments
-                .Where(c => c.PostId == postId)
-                .OrderByDescending(c => c.CreatedAt)
-                .Select(c => new CommentResponseDto
-                {
-                    Id = c.Id,
-                    Content = c.Content,
-                    UserName = c.User.Name,
-                    CreatedAt = c.CreatedAt,
-                    UpdatedAt = c.UpdatedAt,
-                    UserId = c.UserId
-                })
-                .ToListAsync();
+            var query = _dbContext.Comments.Where(c => c.PostId == postId).OrderByDescending(c => c.CreatedAt);
 
-            return Ok(comments);
+            var totalCount = await query.CountAsync();
+            
+            var skip = (pagination.PageNumber - 1) * pagination.PageSize;
+
+            var comments = await query
+            .Skip(skip)
+            .Take(pagination.PageSize)
+            .Select(c => new CommentResponseDto
+            {
+                Id = c.Id,
+                Content = c.Content,
+                UserName = c.User.Name,
+                CreatedAt = c.CreatedAt,
+                UpdatedAt = c.UpdatedAt,
+                UserId = c.UserId
+            })
+            .ToListAsync();
+
+            return Ok(new PagedResult<CommentResponseDto>
+            {
+                Items = comments,
+                TotalCount = totalCount,
+                PageNumber = pagination.PageNumber,
+                PageSize = pagination.PageSize
+            });
         }
 
         [HttpPost]
