@@ -17,9 +17,17 @@ namespace MarbookApi.Controllers
     
         [HttpGet]
         [AllowAnonymous]
-        public async Task<ActionResult<PagedResult<PostResponseDto>>> GetPosts( [FromQuery] PaginationParams pagination)
+        public async Task<ActionResult<PagedResult<PostResponseDto>>> GetPosts( [FromQuery] PaginationParams pagination, [FromQuery] string? search)
         {
-            var query = _dbContext.Posts.Include(p => p.User).OrderByDescending(p => p.CreatedAt);
+
+            var query = _dbContext.Posts.Include(p => p.User).AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                query = query.Where(p => EF.Functions.ILike(p.Content, $"%{search}%"));
+            }
+
+            query = query.OrderByDescending(p => p.CreatedAt);
 
             var totalCount = await query.CountAsync();
 
