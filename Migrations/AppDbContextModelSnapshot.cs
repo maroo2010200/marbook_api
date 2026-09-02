@@ -153,9 +153,10 @@ namespace MarbookApi.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
-                    b.Property<string>("Password")
+                    b.Property<string>("PasswordHash")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasColumnType("text")
+                        .HasColumnName("Password");
 
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
