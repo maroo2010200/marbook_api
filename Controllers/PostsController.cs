@@ -14,10 +14,10 @@ namespace MarbookApi.Controllers
     public class PostsController(AppDbContext dbContext) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
-    
+
         [HttpGet]
         [AllowAnonymous]
-        public async Task<ActionResult<PagedResult<PostResponseDto>>> GetPosts( [FromQuery] PaginationParams pagination, [FromQuery] string? search)
+        public async Task<ActionResult<PagedResult<PostResponseDto>>> GetPosts([FromQuery] PaginationParams pagination, [FromQuery] string? search)
         {
 
             var query = _dbContext.Posts.Include(p => p.User).AsQueryable();
@@ -53,6 +53,51 @@ namespace MarbookApi.Controllers
                 TotalCount = totalCount,
                 PageNumber = pagination.PageNumber,
                 PageSize = pagination.PageSize
+            });
+        }
+        [HttpGet("search")]
+        [AllowAnonymous]
+        public async Task<ActionResult<PagedResult<PostFtsResultDto>>> SearchPosts([FromQuery] PaginationParams pagination, [FromQuery] string? search)
+        {
+            if (string.IsNullOrWhiteSpace(search))
+            {
+                return BadRequest("Search term cannot be empty.");
+            }
+
+            var query = _dbContext.Posts
+            .Include(p => p.User)
+            .Where(p => EF.Functions.ToTsVector("english", p.Content)
+            .Matches(EF.Functions.WebSearchToTsQuery("english", search)));
+
+            var totalCount = await query.CountAsync();
+
+            var skip = (pagination.PageNumber - 1) * pagination.PageSize;
+
+            var posts = await query
+                .Select(p => new PostFtsResultDto
+                {
+                    Id = p.Id,
+                    Content = p.Content,
+                    UserName = p.User.Name,
+                    CreatedAt = p.CreatedAt,
+                    UpdatedAt = p.UpdatedAt,
+                    UserId = p.UserId,
+                    RelevanceScore = EF.Functions.ToTsVector("english", p.Content)
+                        .Rank(EF.Functions.WebSearchToTsQuery("english", search))
+
+                })
+                .OrderByDescending(p => p.RelevanceScore)
+                .ThenByDescending(p => p.CreatedAt)
+                .Skip(skip)
+                .Take(pagination.PageSize)
+                .ToListAsync();
+
+            return Ok(new PagedResult<PostFtsResultDto>
+            {
+                Items = posts,
+                TotalCount = totalCount,
+                PageNumber = pagination.PageNumber,
+                PageSize = pagination.PageNumber
             });
         }
 
@@ -125,7 +170,7 @@ namespace MarbookApi.Controllers
             }
 
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            if(post.UserId != userId)
+            if (post.UserId != userId)
             {
                 return Forbid();
             }
@@ -148,7 +193,7 @@ namespace MarbookApi.Controllers
             }
 
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            if(post.UserId != userId)
+            if (post.UserId != userId)
             {
                 return Forbid();
             }
