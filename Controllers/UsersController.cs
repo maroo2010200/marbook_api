@@ -29,6 +29,42 @@ namespace MarbookApi.Controllers
             return Ok(users);
         }
 
+        [HttpGet("search")]
+        public async Task<ActionResult<PagedResult<UserSearchDto>>> SearchUsers([FromQuery] PaginationParams pagination, [FromQuery] string? search)
+        {
+            if (string.IsNullOrWhiteSpace(search))
+            {
+                return BadRequest("Search content must be valid.");
+            }
+
+            var query = _dbContext.Users
+                .Where(u => (
+                    u.Username != null && EF.Functions.ILike(u.Username, $"{search}%"))
+                    || EF.Functions.ILike(u.Name, $"{search}%")
+                );
+
+            var totalCount = await query.CountAsync();
+            var skip = (pagination.PageNumber - 1) * pagination.PageSize;
+
+            var users = await query
+                .OrderBy(u => u.Name)
+                .Skip(skip)
+                .Take(pagination.PageSize)
+                .Select(u => new UserSearchDto
+                {
+                    Id = u.Id,
+                    Username = u.Username,
+                    Name = u.Name
+                }).ToListAsync();
+
+            return Ok(new PagedResult<UserSearchDto>
+            {
+                Items = users,
+                TotalCount = totalCount,
+                PageNumber = pagination.PageNumber,
+                PageSize = pagination.PageSize
+            });
+        }
         [HttpGet("{id:int}")]
         public async Task<ActionResult<UserResponseDto>> GetUser(int id)
         {
