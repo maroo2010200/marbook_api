@@ -10,10 +10,11 @@ namespace MarbookApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class AuthController(AppDbContext dbContext, IJwtService jwtService) : ControllerBase
+public class AuthController(AppDbContext dbContext, IJwtService jwtService, ILogger<AuthController> logger) : ControllerBase
 {
     private readonly AppDbContext _dbContext = dbContext;
     private readonly IJwtService _jwtService = jwtService;
+    private readonly ILogger _logger = logger;
 
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)
@@ -49,6 +50,10 @@ public class AuthController(AppDbContext dbContext, IJwtService jwtService) : Co
 
         var (token, expiresAt) = _jwtService.GenerateToken(user);
 
+        _logger.LogInformation(
+            "User {UserId} registered successfully.", 
+            user.Id);
+
         return Ok(new AuthResponseDto
         {
             Token = token,
@@ -63,10 +68,18 @@ public class AuthController(AppDbContext dbContext, IJwtService jwtService) : Co
 
         if (user == null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
         {
+            _logger.LogWarning(
+                "Failed login attempt for email {Email}", 
+                dto.Email);
+
             return Unauthorized("Invalid email or password.");
         }
 
         var (token, expiresAt) = _jwtService.GenerateToken(user);
+
+        _logger.LogInformation(
+            "User {UserId} logged in successfully.",
+            user.Id);
 
         return Ok(new AuthResponseDto
         {

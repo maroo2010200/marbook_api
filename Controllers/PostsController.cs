@@ -11,9 +11,10 @@ namespace MarbookApi.Controllers
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
-    public class PostsController(AppDbContext dbContext) : ControllerBase
+    public class PostsController(AppDbContext dbContext, ILogger<PostsController> logger) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
+        private readonly ILogger _logger = logger;
 
         [HttpGet]
         [AllowAnonymous]
@@ -131,9 +132,15 @@ namespace MarbookApi.Controllers
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
+            _logger.LogInformation("User {UserId} is creating a post.", userId);
+
             var user = await _dbContext.Users.FindAsync(userId);
             if (user == null)
             {
+                _logger.LogWarning(
+                    "User {UserId} not found when creating a post.",
+                    userId);
+
                 return NotFound($"User with ID {userId} not found.");
             }
 
@@ -146,6 +153,11 @@ namespace MarbookApi.Controllers
 
             _dbContext.Posts.Add(post);
             await _dbContext.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Post {PostId} created successfully by user {UserId}.",
+                post.Id,
+                userId);
 
             var responseDto = new PostResponseDto
             {
@@ -172,6 +184,11 @@ namespace MarbookApi.Controllers
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
             if (post.UserId != userId)
             {
+                _logger.LogWarning(
+                    "User {UserId} attempted to update post {PostId} owned by another user.",
+                    userId,
+                    post.UserId);
+
                 return Forbid();
             }
 
@@ -179,6 +196,11 @@ namespace MarbookApi.Controllers
             post.UpdatedAt = DateTime.UtcNow;
 
             await _dbContext.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Post {PostId} updated successfully by user {UserId}",
+                post.Id,
+                userId);
 
             return Ok(post);
         }
