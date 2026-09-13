@@ -9,6 +9,7 @@ namespace MarbookApi.Data
         public DbSet<Post> Posts { get; set; }
         public DbSet<Comment> Comments { get; set; }
         public DbSet<Like> Likes { get; set; }
+        public DbSet<Follow> Follows { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -115,6 +116,24 @@ namespace MarbookApi.Data
                 entity.HasOne(l => l.Post)
                     .WithMany(p => p.Likes)
                     .HasForeignKey(l => l.PostId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<Follow>(entity =>
+            {
+                entity.HasKey(f => new { f.FollowerId, f.FolloweeId });
+
+                entity.Property(f => f.CreatedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.HasOne(f => f.Follower)
+                    .WithMany(u => u.Following)
+                    .HasForeignKey(f => f.FollowerId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(f => f.Followee)
+                    .WithMany(u => u.Followers)
+                    .HasForeignKey(f => f.FolloweeId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
         }
