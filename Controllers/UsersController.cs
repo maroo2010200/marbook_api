@@ -3,14 +3,45 @@ using MarbookApi.Models;
 using MarbookApi.DTOs;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class UserController(AppDbContext dbContext) : ControllerBase
+        public class UsersController(AppDbContext dbContext) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
+
+        [HttpGet("me")]
+        [Authorize]
+        public async Task<ActionResult<UserResponseDto>> GetCurrentUser()
+        {
+            // Get the logged-in user's ID from the JWT
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+            // Find the user
+            var user = await _dbContext.Users.FindAsync(userId);
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            // Build the response DTO (omit PasswordHash!)
+            var dto = new UserResponseDto
+            {
+                Id = user.Id,
+                Name = user.Name,
+                Username = user.Username,
+                Email = user.Email,
+                Birthdate = user.Birthdate,
+                CreatedAt = user.CreatedAt,
+                UpdatedAt = user.UpdatedAt
+            };
+
+            return Ok(dto);
+        }
 
         [HttpGet]
         public async Task<ActionResult<IEnumerable<User>>> GetUsers()
