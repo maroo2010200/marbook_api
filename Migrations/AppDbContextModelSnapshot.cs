@@ -168,6 +168,9 @@ namespace MarbookApi.Migrations
                         .IsRequired()
                         .HasColumnType("citext");
 
+                    b.Property<bool>("IsEmailVerified")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -185,6 +188,12 @@ namespace MarbookApi.Migrations
 
                     b.Property<string>("Username")
                         .HasColumnType("citext");
+
+                    b.Property<string>("VerificationToken")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
