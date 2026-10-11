@@ -52,6 +52,7 @@ namespace MarbookApi.Controllers
                 Name = u.Name,
                 Username = u.Username,
                 Email = u.Email,
+                IsEmailVerified = u.IsEmailVerified,
                 Birthdate = u.Birthdate,
                 CreatedAt = u.CreatedAt,
                 UpdatedAt = u.UpdatedAt

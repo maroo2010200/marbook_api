@@ -10,6 +10,7 @@ namespace MarbookApi.Data
         public DbSet<Comment> Comments { get; set; }
         public DbSet<Like> Likes { get; set; }
         public DbSet<Follow> Follows { get; set; }
+        public DbSet<EmailVerification> EmailVerifications { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -50,6 +51,12 @@ namespace MarbookApi.Data
                     .HasDefaultValueSql("NOW()");
             });
             
+            modelBuilder.Entity<EmailVerification>()
+                .HasOne(ev => ev.User)
+                .WithMany()
+                .HasForeignKey(ev => ev.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+                
             modelBuilder.Entity<Post>(entity =>
             {
                 entity.HasKey(p => p.Id);
