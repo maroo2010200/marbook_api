@@ -1,4 +1,3 @@
-
 using MarbookApi.Data;
 using MarbookApi.DTOs;
 using MarbookApi.Models;
@@ -64,7 +63,6 @@ public class AuthController(AppDbContext dbContext, IJwtService jwtService, ILog
         {
             Token = token,
             ExpiresAt = expiresAt,
-            VerificationToken = verificationToken,
             IsEmailVerified = user.IsEmailVerified
         });
     }
@@ -148,6 +146,33 @@ public class AuthController(AppDbContext dbContext, IJwtService jwtService, ILog
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             }
+        });
+    }
+
+    [HttpPost("resend-verification")]
+    public async Task<ActionResult> ResendVerificationEmail([FromQuery] string email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return BadRequest("Email is required.");
+        }
+
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (user == null)
+        {
+            return NotFound("User not found.");
+        }
+
+        var result = await _emailVerificationService.ResendVerificationEmailAsync(user.Id, email);
+
+        if (!result.Success)
+        {
+            return BadRequest(new { Message = result.Message });
+        }
+
+        return Ok(new
+        {
+            Message = result.Message
         });
     }
 }

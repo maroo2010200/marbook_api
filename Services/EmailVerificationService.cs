@@ -10,6 +10,11 @@ public class EmailVerificationService(AppDbContext dbContext, IBrevoEmailSender 
 
     public async Task<string> GenerateTokenAsync(int userId)
     {
+        // Clean up any expired/unused tokens first
+        await _dbContext.EmailVerifications
+            .Where(v => v.UserId == userId && v.ExpiresAt <= DateTime.UtcNow)
+            .ExecuteDeleteAsync();
+
         var token = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
         var verification = new EmailVerification
         {
@@ -22,6 +27,7 @@ public class EmailVerificationService(AppDbContext dbContext, IBrevoEmailSender 
         await _dbContext.SaveChangesAsync();
         return token;
     }
+
     public async Task SendVerificationEmailAsync(int userId, string email, string token)
     {
         try
@@ -39,10 +45,11 @@ public class EmailVerificationService(AppDbContext dbContext, IBrevoEmailSender 
                 email, userId);
         }
     }
+
     public async Task<int?> VerifyTokenAsync(string token)
     {
         var verification = await _dbContext.EmailVerifications
-            .FirstOrDefaultAsync(v => v.Token == token && v.ExpiresAt > DateTime.UtcNow);
+            .FirstOrDefaultAsync(v => v.Token == token && !v.IsUsed && v.ExpiresAt > DateTime.UtcNow);
 
         if (verification == null) return null;
 
@@ -50,10 +57,30 @@ public class EmailVerificationService(AppDbContext dbContext, IBrevoEmailSender 
         if (user == null) return null;
 
         user.IsEmailVerified = true;
+        verification.IsUsed = true;
         user.VerifiedAt = DateTime.UtcNow;
         user.VerificationToken = null;
 
         await _dbContext.SaveChangesAsync();
         return user.Id;
+    }
+
+    public async Task<(bool Success, string? Token, string? Message)> ResendVerificationEmailAsync(int userId, string email)
+    {
+        // Check if user is already verified
+        var user = await _dbContext.Users.FindAsync(userId);
+        if (user == null) return (false, null, "User not found.");
+
+        if (user.IsEmailVerified)
+        {
+            return (false, null, "Email is already verified.");
+        }
+
+        // Clean up old tokens and generate new one
+        var tokenResult = await GenerateTokenAsync(userId);
+
+        await SendVerificationEmailAsync(userId, email, tokenResult);
+
+        return (true, tokenResult, "Verification email resent successfully.");
     }
 }
