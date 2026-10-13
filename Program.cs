@@ -72,6 +72,11 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddScoped<IJwtService, JwtService>();
+builder.Services.AddScoped<IEmailVerificationService, EmailVerificationService>();
+builder.Services.AddHttpClient<IBrevoEmailSender, BrevoEmailSender>(client =>
+{
+    client.BaseAddress = new Uri("https://api.brevo.com/");
+});
 
 var app = builder.Build();
 

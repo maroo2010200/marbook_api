@@ -8,6 +8,9 @@ namespace MarbookApi.Models
         public string Email { get; set; } = string.Empty;
         public string PasswordHash { get; set; } = string.Empty;
         public DateOnly Birthdate { get; set; }
+        public bool IsEmailVerified { get; set; }
+        public string? VerificationToken { get; set; }
+        public DateTime? VerifiedAt { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
 

@@ -1,4 +1,3 @@
-
 using MarbookApi.Data;
 using MarbookApi.DTOs;
 using MarbookApi.Models;
@@ -10,11 +9,12 @@ namespace MarbookApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-public class AuthController(AppDbContext dbContext, IJwtService jwtService, ILogger<AuthController> logger) : ControllerBase
+public class AuthController(AppDbContext dbContext, IJwtService jwtService, ILogger<AuthController> logger, IEmailVerificationService emailVerificationService) : ControllerBase
 {
     private readonly AppDbContext _dbContext = dbContext;
     private readonly IJwtService _jwtService = jwtService;
     private readonly ILogger _logger = logger;
+    private readonly IEmailVerificationService _emailVerificationService = emailVerificationService;
 
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)
@@ -40,6 +40,7 @@ public class AuthController(AppDbContext dbContext, IJwtService jwtService, ILog
         {
             Name = dto.Name,
             Email = dto.Email,
+            IsEmailVerified = false,
             Username = dto.Username,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
             Birthdate = dto.Birthdate
@@ -47,6 +48,10 @@ public class AuthController(AppDbContext dbContext, IJwtService jwtService, ILog
 
         _dbContext.Users.Add(user);
         await _dbContext.SaveChangesAsync();
+
+        var verificationToken = await _emailVerificationService.GenerateTokenAsync(user.Id);
+
+        await _emailVerificationService.SendVerificationEmailAsync(user.Id, user.Email, verificationToken);
 
         var (token, expiresAt) = _jwtService.GenerateToken(user);
 
@@ -57,7 +62,8 @@ public class AuthController(AppDbContext dbContext, IJwtService jwtService, ILog
         return Ok(new AuthResponseDto
         {
             Token = token,
-            ExpiresAt = expiresAt
+            ExpiresAt = expiresAt,
+            IsEmailVerified = user.IsEmailVerified
         });
     }
 
@@ -75,16 +81,98 @@ public class AuthController(AppDbContext dbContext, IJwtService jwtService, ILog
             return Unauthorized("Invalid email or password.");
         }
 
+        if (!user.IsEmailVerified)
+        {
+            _logger.LogWarning(
+                "Failed to verify email {Email}",
+                dto.Email);
+            
+            return Unauthorized("Please verify your email.");
+        }
+
         var (token, expiresAt) = _jwtService.GenerateToken(user);
 
         _logger.LogInformation(
             "User {UserId} logged in successfully.",
             user.Id);
 
-        return Ok(new AuthResponseDto
+        return Ok(new 
         {
             Token = token,
-            ExpiresAt = expiresAt
+            ExpiresAt = expiresAt,
+            user = new UserResponseDto
+            {
+                Id = user.Id,
+                Name = user.Name,
+                Username = user.Username,
+                Email = user.Email,
+                IsEmailVerified = user.IsEmailVerified,
+                Birthdate = user.Birthdate,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            }
+        });
+    }
+
+    [HttpPost("verify")]
+    public async Task<ActionResult> VerifyEmail([FromQuery] string token)
+    {
+        var userId = await _emailVerificationService.VerifyTokenAsync(token);
+
+        if (userId == null)
+        {
+            return BadRequest("Invalid or expired verification token.");
+        }
+
+        var user = await _dbContext.Users.FindAsync(userId);
+        if (user == null)
+        {
+            return BadRequest("User not found.");
+        }
+
+        var (Token, ExpiresAt) = _jwtService.GenerateToken(user);
+
+        return Ok(new
+        {
+            token = Token,
+            expiresAt = ExpiresAt,
+            user = new UserResponseDto
+            {
+                Id = user.Id,
+                Name = user.Name,
+                Username = user.Username,
+                Email = user.Email,
+                IsEmailVerified = user.IsEmailVerified,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            }
+        });
+    }
+
+    [HttpPost("resend-verification")]
+    public async Task<ActionResult> ResendVerificationEmail([FromQuery] string email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return BadRequest("Email is required.");
+        }
+
+        var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == email);
+        if (user == null)
+        {
+            return NotFound("User not found.");
+        }
+
+        var result = await _emailVerificationService.ResendVerificationEmailAsync(user.Id, email);
+
+        if (!result.Success)
+        {
+            return BadRequest(new { Message = result.Message });
+        }
+
+        return Ok(new
+        {
+            Message = result.Message
         });
     }
 }
