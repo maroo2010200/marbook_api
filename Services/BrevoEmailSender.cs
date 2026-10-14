@@ -1,4 +1,5 @@
 using System.Net.Http;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -19,6 +20,10 @@ public class BrevoEmailSender : IBrevoEmailSender
         var apiKey = _configuration["Brevo:ApiKey"]
                        ?? throw new InvalidOperationException("Brevo API key is not configured.");
 
+        string encodedToken = WebUtility.UrlEncode(verificationToken);
+
+        string frontendVerificationUrl = $"http://localhost:5173/verify?token={encodedToken}";
+
         var emailData = new
         {
             sender = new
@@ -33,7 +38,7 @@ public class BrevoEmailSender : IBrevoEmailSender
             subject = "Verify your email on Marbook",
             htmlContent = $@"<h1>Welcome to Marbook!</h1>
                              <p>Thanks for joining. Please verify your email to activate your account.</p>
-                             <a href='http://localhost:5244/api/auth/verify?token={verificationToken}'>
+                             <a href='{frontendVerificationUrl}'>
                                Click here to verify
                              </a>"
         };
