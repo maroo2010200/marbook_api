@@ -8,6 +8,7 @@ namespace MarbookApi.Data
         public DbSet<User> Users { get; set; }
         public DbSet<Post> Posts { get; set; }
         public DbSet<Comment> Comments { get; set; }
+        public DbSet<CommentLike> CommentLikes { get; set; }
         public DbSet<Like> Likes { get; set; }
         public DbSet<Follow> Follows { get; set; }
         public DbSet<EmailVerification> EmailVerifications { get; set; } = null!;
@@ -31,8 +32,8 @@ namespace MarbookApi.Data
                 entity.HasIndex(u => u.Username)
                     .IsUnique();
         
-                entity.Property(u => u.Email).
-                    HasColumnType("citext")
+                entity.Property(u => u.Email)
+                    .HasColumnType("citext")
                     .IsRequired();
 
                 entity.HasIndex(u => u.Email)
@@ -99,6 +100,35 @@ namespace MarbookApi.Data
                 entity.HasOne(c => c.Post)
                     .WithMany(p => p.Comments)
                     .HasForeignKey(c => c.PostId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(c => c.ParentComment)
+                    .WithMany(c => c.Replies)
+                    .HasForeignKey(c => c.ParentCommentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<CommentLike>(entity =>
+            {
+                entity.HasKey(cl => cl.Id);
+
+                entity.HasIndex(cl => new { cl.UserId, cl.CommentId })
+                    .IsUnique();
+
+                entity.Property(cl => cl.CreatedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.Property(cl => cl.UpdatedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.HasOne(cl => cl.User)
+                    .WithMany()
+                    .HasForeignKey(cl => cl.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(cl => cl.Comment)
+                    .WithMany(c => c.Likes)
+                    .HasForeignKey(cl => cl.CommentId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
 

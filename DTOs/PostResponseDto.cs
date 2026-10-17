@@ -1,5 +1,5 @@
-
 namespace MarbookApi.DTOs;
+
 public class PostResponseDto
 {
     public int Id { get; set; }
@@ -8,4 +8,7 @@ public class PostResponseDto
     public string UserName { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public int LikesCount { get; set; }
+    public int CommentsCount { get; set; }
+    public bool IsLiked { get; set; }
 }

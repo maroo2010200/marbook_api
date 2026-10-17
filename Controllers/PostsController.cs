@@ -20,6 +20,9 @@ namespace MarbookApi.Controllers
         [AllowAnonymous]
         public async Task<ActionResult<PagedResult<PostResponseDto>>> GetPosts([FromQuery] PaginationParams pagination, [FromQuery] string? search)
         {
+            int? currentUserId = User.Identity?.IsAuthenticated == true && int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid)
+                ? uid
+                : null;
 
             var query = _dbContext.Posts.Include(p => p.User).AsQueryable();
 
@@ -35,18 +38,21 @@ namespace MarbookApi.Controllers
             var skip = (pagination.PageNumber - 1) * pagination.PageSize;
 
             var posts = await query
-            .Skip(skip)
-            .Take(pagination.PageSize)
-            .Select(p => new PostResponseDto
-            {
-                Id = p.Id,
-                Content = p.Content,
-                UserName = p.User.Name,
-                CreatedAt = p.CreatedAt,
-                UpdatedAt = p.UpdatedAt,
-                UserId = p.UserId
-            })
-            .ToListAsync();
+                .Skip(skip)
+                .Take(pagination.PageSize)
+                .Select(p => new PostResponseDto
+                {
+                    Id = p.Id,
+                    Content = p.Content,
+                    UserName = p.User.Name,
+                    CreatedAt = p.CreatedAt,
+                    UpdatedAt = p.UpdatedAt,
+                    UserId = p.UserId,
+                    LikesCount = p.Likes.Count(),
+                    CommentsCount = p.Comments.Count(),
+                    IsLiked = currentUserId.HasValue && p.Likes.Any(l => l.UserId == currentUserId.Value)
+                })
+                .ToListAsync();
 
             return Ok(new PagedResult<PostResponseDto>
             {
@@ -56,6 +62,7 @@ namespace MarbookApi.Controllers
                 PageSize = pagination.PageSize
             });
         }
+
         [HttpGet("search")]
         [AllowAnonymous]
         public async Task<ActionResult<PagedResult<PostFtsResultDto>>> SearchPosts([FromQuery] PaginationParams pagination, [FromQuery] string? search)
@@ -106,6 +113,10 @@ namespace MarbookApi.Controllers
         [AllowAnonymous]
         public async Task<ActionResult<PostResponseDto>> GetPost(int id)
         {
+            int? currentUserId = User.Identity?.IsAuthenticated == true && int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid)
+                ? uid
+                : null;
+
             var post = await _dbContext.Posts
                 .Where(p => p.Id == id)
                 .Select(p => new PostResponseDto
@@ -115,7 +126,10 @@ namespace MarbookApi.Controllers
                     UserName = p.User.Name,
                     CreatedAt = p.CreatedAt,
                     UpdatedAt = p.UpdatedAt,
-                    UserId = p.UserId
+                    UserId = p.UserId,
+                    LikesCount = p.Likes.Count(),
+                    CommentsCount = p.Comments.Count(),
+                    IsLiked = currentUserId.HasValue && p.Likes.Any(l => l.UserId == currentUserId.Value)
                 })
                 .FirstOrDefaultAsync();
 
@@ -166,7 +180,10 @@ namespace MarbookApi.Controllers
                 UserName = user.Name,
                 CreatedAt = post.CreatedAt,
                 UpdatedAt = post.UpdatedAt,
-                UserId = post.UserId
+                UserId = post.UserId,
+                LikesCount = 0,
+                CommentsCount = 0,
+                IsLiked = false
             };
 
             return CreatedAtAction(nameof(GetPost), new { id = post.Id }, responseDto);

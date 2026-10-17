@@ -49,28 +49,26 @@ namespace MarbookApi.Controllers
             _dbContext.Likes.Add(like);
             await _dbContext.SaveChangesAsync();
 
-            return Created();
+            var likeCount = await _dbContext.Likes.CountAsync(l => l.PostId == postId);
+            return Ok(new { liked = true, likeCount });
         }
 
-        [HttpDelete("{id:int}")]
-        public async Task<IActionResult> DeleteLike(int postId, int id)
+        [HttpDelete]
+        public async Task<IActionResult> DeleteLikeForPost(int postId)
         {
-            var like = await _dbContext.Likes.FindAsync(id);
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var like = await _dbContext.Likes
+                .FirstOrDefaultAsync(l => l.PostId == postId && l.UserId == userId);
             if (like == null)
             {
-                return NotFound();
-            }
-
-            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            if(like.UserId != userId)
-            {
-                return Forbid();
+                return NotFound("Like not found.");
             }
 
             _dbContext.Likes.Remove(like);
             await _dbContext.SaveChangesAsync();
 
-            return NoContent();
+            var likeCount = await _dbContext.Likes.CountAsync(l => l.PostId == postId);
+            return Ok(new { liked = false, likeCount });
         }
     }
 }
