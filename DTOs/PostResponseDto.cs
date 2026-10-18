@@ -1,9 +1,12 @@
+﻿using MarbookApi.Models;
+
 namespace MarbookApi.DTOs;
 
 public class PostResponseDto
 {
     public int Id { get; set; }
     public string Content { get; set; } = string.Empty;
+    public PostVisibility Visibility { get; set; } = PostVisibility.Public;
     public int UserId { get; set; }
     public string UserName { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }

@@ -1,4 +1,4 @@
-using MarbookApi.Models;
+﻿using MarbookApi.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace MarbookApi.Data
@@ -71,6 +71,9 @@ namespace MarbookApi.Data
 
                 entity.Property(p => p.UpdatedAt)
                     .HasDefaultValueSql("NOW()");
+
+                entity.Property(p => p.Visibility)
+                    .HasDefaultValue(PostVisibility.Public);
                 
                 entity.HasOne(p => p.User)
                     .WithMany(u => u.Posts)
@@ -176,3 +179,4 @@ namespace MarbookApi.Data
         }
     }
 }
+
