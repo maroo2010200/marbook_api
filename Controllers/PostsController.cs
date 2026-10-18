@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
 using MarbookApi.Models;
@@ -162,7 +162,8 @@ namespace MarbookApi.Controllers
             {
                 Content = postDto.Content,
                 UserId = userId,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
             };
 
             _dbContext.Posts.Add(post);
@@ -190,9 +191,12 @@ namespace MarbookApi.Controllers
         }
 
         [HttpPut("{id:int}")]
-        public async Task<ActionResult<Post>> UpdatePost(int id, PostUpdateDto postDto)
+        public async Task<ActionResult<PostResponseDto>> UpdatePost(int id, PostUpdateDto postDto)
         {
-            var post = await _dbContext.Posts.FindAsync(id);
+            var post = await _dbContext.Posts
+                .Include(p => p.User)
+                .FirstOrDefaultAsync(p => p.Id == id);
+
             if (post == null)
             {
                 return NotFound();
@@ -219,7 +223,24 @@ namespace MarbookApi.Controllers
                 post.Id,
                 userId);
 
-            return Ok(post);
+            var likesCount = await _dbContext.Likes.CountAsync(l => l.PostId == id);
+            var commentsCount = await _dbContext.Comments.CountAsync(c => c.PostId == id);
+            var isLiked = await _dbContext.Likes.AnyAsync(l => l.PostId == id && l.UserId == userId);
+
+            var responseDto = new PostResponseDto
+            {
+                Id = post.Id,
+                Content = post.Content,
+                UserName = post.User.Name,
+                CreatedAt = post.CreatedAt,
+                UpdatedAt = post.UpdatedAt,
+                UserId = post.UserId,
+                LikesCount = likesCount,
+                CommentsCount = commentsCount,
+                IsLiked = isLiked
+            };
+
+            return Ok(responseDto);
         }
 
         [HttpDelete("{id:int}")]
@@ -240,7 +261,7 @@ namespace MarbookApi.Controllers
             _dbContext.Posts.Remove(post);
             await _dbContext.SaveChangesAsync();
 
-            return Ok();
+            return NoContent();
         }
     }
 }

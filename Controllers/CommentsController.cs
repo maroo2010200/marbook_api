@@ -1,4 +1,4 @@
-using MarbookApi.Data;
+﻿using MarbookApi.Data;
 using Microsoft.AspNetCore.Mvc;
 using MarbookApi.Models;
 using MarbookApi.DTOs;
@@ -279,17 +279,21 @@ namespace MarbookApi.Controllers
             return Ok(replies);
         }
 
-        [HttpPut("{commentId:int}")]
-        public async Task<IActionResult> UpdateComment(int postId, int commentId, CommentUpdateDto commentUpdateDto)
+        [HttpPut("/api/comments/{commentId:int}")]
+        public async Task<ActionResult<CommentResponseDto>> UpdateComment(
+            int commentId,
+            CommentUpdateDto commentUpdateDto)
         {
-            var comment = await _dbContext.Comments.FirstOrDefaultAsync(c => c.Id == commentId && c.PostId == postId);
+            var query = _dbContext.Comments.Include(c => c.User).AsQueryable();
+            
+            var comment = await query.FirstOrDefaultAsync(c => c.Id == commentId);
             if (comment == null)
             {
                 return NotFound();
             }
 
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            if(comment.UserId != userId)
+            if (comment.UserId != userId)
             {
                 return Forbid();
             }
@@ -299,20 +303,63 @@ namespace MarbookApi.Controllers
 
             await _dbContext.SaveChangesAsync();
 
-            return NoContent();
+            var likeCount = await _dbContext.CommentLikes.CountAsync(cl => cl.CommentId == commentId);
+            var isLiked = await _dbContext.CommentLikes.AnyAsync(cl => cl.CommentId == commentId && cl.UserId == userId);
+
+            var hierarchy = await _dbContext.Comments
+                .Where(c => c.PostId == comment.PostId && c.ParentCommentId != null)
+                .Select(c => new { c.Id, c.ParentCommentId })
+                .ToListAsync();
+
+            var childrenMap = hierarchy
+                .GroupBy(c => c.ParentCommentId!.Value)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToList());
+
+            int CountAllDescendants(int id)
+            {
+                if (!childrenMap.TryGetValue(id, out var childIds)) return 0;
+                int count = childIds.Count;
+                foreach (var childId in childIds)
+                {
+                    count += CountAllDescendants(childId);
+                }
+                return count;
+            }
+
+            var responseDto = new CommentResponseDto
+            {
+                Id = comment.Id,
+                Content = comment.Content,
+                UserName = comment.User.Name,
+                CreatedAt = comment.CreatedAt,
+                UpdatedAt = comment.UpdatedAt,
+                UserId = comment.UserId,
+                ParentCommentId = comment.ParentCommentId,
+                LikeCount = likeCount,
+                ReplyCount = CountAllDescendants(comment.Id),
+                Liked = isLiked
+            };
+
+            return Ok(responseDto);
         }
 
-        [HttpDelete("{commentId:int}")]
-        public async Task<IActionResult> DeleteComment(int postId, int commentId)
+        [HttpDelete("/api/comments/{commentId:int}")]
+        public async Task<IActionResult> DeleteComment(int commentId, int? postId = null)
         {
-            var comment = await _dbContext.Comments.FirstOrDefaultAsync(c => c.Id == commentId && c.PostId == postId);
+            var query = _dbContext.Comments.AsQueryable();
+            if (postId.HasValue && postId.Value > 0)
+            {
+                query = query.Where(c => c.PostId == postId.Value);
+            }
+
+            var comment = await query.FirstOrDefaultAsync(c => c.Id == commentId);
             if (comment == null)
             {
                 return NotFound();
             }
 
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            if(comment.UserId != userId)
+            if (comment.UserId != userId)
             {
                 return Forbid();
             }
