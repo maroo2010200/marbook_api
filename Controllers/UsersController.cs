@@ -10,7 +10,7 @@ namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-        public class UsersController(AppDbContext dbContext) : ControllerBase
+    public class UsersController(AppDbContext dbContext) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
 
@@ -18,23 +18,24 @@ namespace MarbookApi.Controllers
         [Authorize]
         public async Task<ActionResult<UserResponseDto>> GetCurrentUser()
         {
-            // Get the logged-in user's ID from the JWT
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            // Find the user
             var user = await _dbContext.Users.FindAsync(userId);
             if (user == null)
             {
                 return NotFound();
             }
 
-            // Build the response DTO (omit PasswordHash!)
             var dto = new UserResponseDto
             {
                 Id = user.Id,
                 Name = user.Name,
                 Username = user.Username,
                 Email = user.Email,
+                Bio = user.Bio,
+                AvatarUrl = user.AvatarUrl,
+                CoverUrl = user.CoverUrl,
+                IsEmailVerified = user.IsEmailVerified,
                 Birthdate = user.Birthdate,
                 CreatedAt = user.CreatedAt,
                 UpdatedAt = user.UpdatedAt
@@ -43,8 +44,82 @@ namespace MarbookApi.Controllers
             return Ok(dto);
         }
 
+        [HttpPut("me")]
+        [Authorize]
+        public async Task<ActionResult<UserProfileDto>> UpdateMyProfile([FromBody] UserProfileUpdateDto profileDto)
+        {
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var user = await _dbContext.Users.FindAsync(userId);
+            if (user == null)
+            {
+                return NotFound();
+            }
+
+            if (!string.IsNullOrWhiteSpace(profileDto.Username))
+            {
+                var trimmedUsername = profileDto.Username.Trim();
+                var usernameTaken = await _dbContext.Users
+                    .AnyAsync(u => u.Username != null && u.Username.ToLower() == trimmedUsername.ToLower() && u.Id != userId);
+
+                if (usernameTaken)
+                {
+                    return BadRequest("Username is already taken.");
+                }
+
+                user.Username = trimmedUsername;
+            }
+
+            user.Name = profileDto.Name.Trim();
+            user.Bio = profileDto.Bio?.Trim();
+            user.Birthdate = profileDto.Birthdate;
+            user.AvatarUrl = string.IsNullOrWhiteSpace(profileDto.AvatarUrl) ? null : profileDto.AvatarUrl.Trim();
+            user.CoverUrl = string.IsNullOrWhiteSpace(profileDto.CoverUrl) ? null : profileDto.CoverUrl.Trim();
+            user.UpdatedAt = DateTime.UtcNow;
+
+            await _dbContext.SaveChangesAsync();
+
+            var result = await BuildUserProfileDto(user, userId);
+            return Ok(result);
+        }
+
+        [HttpGet("{id:int}/profile")]
+        public async Task<ActionResult<UserProfileDto>> GetUserProfile(int id)
+        {
+            var user = await _dbContext.Users.FindAsync(id);
+            if (user == null)
+            {
+                return NotFound("User not found.");
+            }
+
+            int? currentUserId = User.Identity?.IsAuthenticated == true &&
+                int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid)
+                ? uid
+                : null;
+
+            var profile = await BuildUserProfileDto(user, currentUserId);
+            return Ok(profile);
+        }
+
+        [HttpGet("username/{username}/profile")]
+        public async Task<ActionResult<UserProfileDto>> GetUserProfileByUsername(string username)
+        {
+            var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Username != null && u.Username.ToLower() == username.ToLower());
+            if (user == null)
+            {
+                return NotFound("User not found.");
+            }
+
+            int? currentUserId = User.Identity?.IsAuthenticated == true &&
+                int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid)
+                ? uid
+                : null;
+
+            var profile = await BuildUserProfileDto(user, currentUserId);
+            return Ok(profile);
+        }
+
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<User>>> GetUsers()
+        public async Task<ActionResult<IEnumerable<UserResponseDto>>> GetUsers()
         {
             var users = await _dbContext.Users.Select(u => new UserResponseDto
             {
@@ -52,6 +127,9 @@ namespace MarbookApi.Controllers
                 Name = u.Name,
                 Username = u.Username,
                 Email = u.Email,
+                Bio = u.Bio,
+                AvatarUrl = u.AvatarUrl,
+                CoverUrl = u.CoverUrl,
                 IsEmailVerified = u.IsEmailVerified,
                 Birthdate = u.Birthdate,
                 CreatedAt = u.CreatedAt,
@@ -86,7 +164,8 @@ namespace MarbookApi.Controllers
                 {
                     Id = u.Id,
                     Username = u.Username,
-                    Name = u.Name
+                    Name = u.Name,
+                    AvatarUrl = u.AvatarUrl
                 }).ToListAsync();
 
             return Ok(new PagedResult<UserSearchDto>
@@ -97,6 +176,7 @@ namespace MarbookApi.Controllers
                 PageSize = pagination.PageSize
             });
         }
+
         [HttpGet("{id:int}")]
         public async Task<ActionResult<UserResponseDto>> GetUser(int id)
         {
@@ -113,6 +193,10 @@ namespace MarbookApi.Controllers
                 Name = user.Name,
                 Username = user.Username,
                 Email = user.Email,
+                Bio = user.Bio,
+                AvatarUrl = user.AvatarUrl,
+                CoverUrl = user.CoverUrl,
+                IsEmailVerified = user.IsEmailVerified,
                 Birthdate = user.Birthdate,
                 CreatedAt = user.CreatedAt,
                 UpdatedAt = user.UpdatedAt
@@ -134,6 +218,7 @@ namespace MarbookApi.Controllers
                 Name = userDto.Name,
                 Username = userDto.Username,
                 Email = userDto.Email,
+                Bio = null,
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(userDto.Password),
                 Birthdate = userDto.Birthdate,
                 CreatedAt = DateTime.UtcNow,
@@ -192,5 +277,32 @@ namespace MarbookApi.Controllers
             return NoContent();
         }
 
+        private async Task<UserProfileDto> BuildUserProfileDto(User user, int? currentUserId)
+        {
+            var followersCount = await _dbContext.Follows.CountAsync(f => f.FolloweeId == user.Id);
+            var followingCount = await _dbContext.Follows.CountAsync(f => f.FollowerId == user.Id);
+            var postsCount = await _dbContext.Posts.CountAsync(p => p.UserId == user.Id);
+
+            var isFollowing = currentUserId.HasValue && currentUserId.Value != user.Id
+                && await _dbContext.Follows.AnyAsync(f => f.FollowerId == currentUserId.Value && f.FolloweeId == user.Id);
+
+            return new UserProfileDto
+            {
+                Id = user.Id,
+                Name = user.Name,
+                Username = user.Username,
+                Email = user.Email,
+                Bio = user.Bio,
+                AvatarUrl = user.AvatarUrl,
+                CoverUrl = user.CoverUrl,
+                Birthdate = user.Birthdate,
+                CreatedAt = user.CreatedAt,
+                FollowersCount = followersCount,
+                FollowingCount = followingCount,
+                PostsCount = postsCount,
+                IsFollowing = isFollowing,
+                IsMe = currentUserId.HasValue && currentUserId.Value == user.Id
+            };
+        }
     }
 }
