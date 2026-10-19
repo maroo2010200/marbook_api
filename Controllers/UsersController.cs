@@ -1,4 +1,4 @@
-﻿using MarbookApi.Data;
+using MarbookApi.Data;
 using MarbookApi.Models;
 using MarbookApi.DTOs;
 using Microsoft.AspNetCore.Mvc;
@@ -33,6 +33,8 @@ namespace MarbookApi.Controllers
                 Username = user.Username,
                 Email = user.Email,
                 Bio = user.Bio,
+                AvatarUrl = user.AvatarUrl,
+                CoverUrl = user.CoverUrl,
                 IsEmailVerified = user.IsEmailVerified,
                 Birthdate = user.Birthdate,
                 CreatedAt = user.CreatedAt,
@@ -63,12 +65,15 @@ namespace MarbookApi.Controllers
                 {
                     return BadRequest("Username is already taken.");
                 }
+
                 user.Username = trimmedUsername;
             }
 
             user.Name = profileDto.Name.Trim();
             user.Bio = profileDto.Bio?.Trim();
             user.Birthdate = profileDto.Birthdate;
+            user.AvatarUrl = string.IsNullOrWhiteSpace(profileDto.AvatarUrl) ? null : profileDto.AvatarUrl.Trim();
+            user.CoverUrl = string.IsNullOrWhiteSpace(profileDto.CoverUrl) ? null : profileDto.CoverUrl.Trim();
             user.UpdatedAt = DateTime.UtcNow;
 
             await _dbContext.SaveChangesAsync();
@@ -123,6 +128,8 @@ namespace MarbookApi.Controllers
                 Username = u.Username,
                 Email = u.Email,
                 Bio = u.Bio,
+                AvatarUrl = u.AvatarUrl,
+                CoverUrl = u.CoverUrl,
                 IsEmailVerified = u.IsEmailVerified,
                 Birthdate = u.Birthdate,
                 CreatedAt = u.CreatedAt,
@@ -157,7 +164,8 @@ namespace MarbookApi.Controllers
                 {
                     Id = u.Id,
                     Username = u.Username,
-                    Name = u.Name
+                    Name = u.Name,
+                    AvatarUrl = u.AvatarUrl
                 }).ToListAsync();
 
             return Ok(new PagedResult<UserSearchDto>
@@ -186,6 +194,8 @@ namespace MarbookApi.Controllers
                 Username = user.Username,
                 Email = user.Email,
                 Bio = user.Bio,
+                AvatarUrl = user.AvatarUrl,
+                CoverUrl = user.CoverUrl,
                 IsEmailVerified = user.IsEmailVerified,
                 Birthdate = user.Birthdate,
                 CreatedAt = user.CreatedAt,
@@ -283,6 +293,8 @@ namespace MarbookApi.Controllers
                 Username = user.Username,
                 Email = user.Email,
                 Bio = user.Bio,
+                AvatarUrl = user.AvatarUrl,
+                CoverUrl = user.CoverUrl,
                 Birthdate = user.Birthdate,
                 CreatedAt = user.CreatedAt,
                 FollowersCount = followersCount,

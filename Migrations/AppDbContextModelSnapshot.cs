@@ -208,11 +208,47 @@ namespace MarbookApi.Migrations
                     b.Property<int>("UserId")
                         .HasColumnType("integer");
 
+                    b.Property<int>("Visibility")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.HasKey("Id");
 
                     b.HasIndex("UserId");
 
                     b.ToTable("Posts");
+                });
+
+            modelBuilder.Entity("MarbookApi.Models.PostImage", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PostId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PostId");
+
+                    b.ToTable("PostImages");
                 });
 
             modelBuilder.Entity("MarbookApi.Models.User", b =>
@@ -223,11 +259,19 @@ namespace MarbookApi.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<string>("AvatarUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<string>("Bio")
                         .HasColumnType("text");
 
                     b.Property<DateOnly>("Birthdate")
                         .HasColumnType("date");
+
+                    b.Property<string>("CoverUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.Property<DateTime>("CreatedAt")
                         .ValueGeneratedOnAdd()
@@ -381,6 +425,17 @@ namespace MarbookApi.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("MarbookApi.Models.PostImage", b =>
+                {
+                    b.HasOne("MarbookApi.Models.Post", "Post")
+                        .WithMany("Images")
+                        .HasForeignKey("PostId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Post");
+                });
+
             modelBuilder.Entity("MarbookApi.Models.Comment", b =>
                 {
                     b.Navigation("Likes");
@@ -391,6 +446,8 @@ namespace MarbookApi.Migrations
             modelBuilder.Entity("MarbookApi.Models.Post", b =>
                 {
                     b.Navigation("Comments");
+
+                    b.Navigation("Images");
 
                     b.Navigation("Likes");
                 });
@@ -411,4 +468,3 @@ namespace MarbookApi.Migrations
         }
     }
 }
-

@@ -1,4 +1,4 @@
-﻿namespace MarbookApi.Models
+namespace MarbookApi.Models
 {
     public class User
     {
@@ -7,6 +7,8 @@
         public string? Username { get; set; }
         public string Email { get; set; } = string.Empty;
         public string? Bio { get; set; }
+        public string? AvatarUrl { get; set; }
+        public string? CoverUrl { get; set; }
         public string PasswordHash { get; set; } = string.Empty;
         public DateOnly Birthdate { get; set; }
         public bool IsEmailVerified { get; set; }

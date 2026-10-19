@@ -28,7 +28,10 @@ namespace MarbookApi.Controllers
                 ? uid
                 : null;
 
-            var query = _dbContext.Posts.Include(p => p.User).AsQueryable();
+            var query = _dbContext.Posts
+                .Include(p => p.User)
+                .Include(p => p.Images)
+                .AsQueryable();
 
             if (userId.HasValue)
             {
@@ -92,12 +95,14 @@ namespace MarbookApi.Controllers
                     Content = p.Content,
                     Visibility = p.Visibility,
                     UserName = p.User.Name,
+                    UserAvatarUrl = p.User.AvatarUrl,
                     CreatedAt = p.CreatedAt,
                     UpdatedAt = p.UpdatedAt,
                     UserId = p.UserId,
                     LikesCount = p.Likes.Count(),
                     CommentsCount = p.Comments.Count(),
-                    IsLiked = currentUserId.HasValue && p.Likes.Any(l => l.UserId == currentUserId.Value)
+                    IsLiked = currentUserId.HasValue && p.Likes.Any(l => l.UserId == currentUserId.Value),
+                    ImageUrls = p.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList()
                 })
                 .ToListAsync();
 
@@ -125,8 +130,8 @@ namespace MarbookApi.Controllers
 
             var query = _dbContext.Posts
                 .Include(p => p.User)
-                .Where(p => EF.Functions.ToTsVector("english", p.Content)
-                    .Matches(EF.Functions.WebSearchToTsQuery("english", search)));
+                .Include(p => p.Images)
+                .Where(p => EF.Functions.ToTsVector("english", p.Content).Matches(EF.Functions.WebSearchToTsQuery("english", search)));
 
             if (currentUserId.HasValue)
             {
@@ -156,11 +161,13 @@ namespace MarbookApi.Controllers
                     Content = p.Content,
                     Visibility = p.Visibility,
                     UserName = p.User.Name,
+                    UserAvatarUrl = p.User.AvatarUrl,
                     CreatedAt = p.CreatedAt,
                     UpdatedAt = p.UpdatedAt,
                     UserId = p.UserId,
                     RelevanceScore = EF.Functions.ToTsVector("english", p.Content)
-                        .Rank(EF.Functions.WebSearchToTsQuery("english", search))
+                        .Rank(EF.Functions.WebSearchToTsQuery("english", search)),
+                    ImageUrls = p.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList()
                 })
                 .OrderByDescending(p => p.RelevanceScore)
                 .ThenByDescending(p => p.CreatedAt)
@@ -189,6 +196,7 @@ namespace MarbookApi.Controllers
                 .Include(p => p.User)
                 .Include(p => p.Likes)
                 .Include(p => p.Comments)
+                .Include(p => p.Images)
                 .FirstOrDefaultAsync(p => p.Id == id);
 
             if (post == null)
@@ -229,12 +237,14 @@ namespace MarbookApi.Controllers
                 Content = post.Content,
                 Visibility = post.Visibility,
                 UserName = post.User.Name,
+                UserAvatarUrl = post.User.AvatarUrl,
                 CreatedAt = post.CreatedAt,
                 UpdatedAt = post.UpdatedAt,
                 UserId = post.UserId,
                 LikesCount = post.Likes.Count,
                 CommentsCount = post.Comments.Count,
-                IsLiked = currentUserId.HasValue && post.Likes.Any(l => l.UserId == currentUserId.Value)
+                IsLiked = currentUserId.HasValue && post.Likes.Any(l => l.UserId == currentUserId.Value),
+                ImageUrls = post.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList()
             };
 
             return Ok(responseDto);
@@ -250,29 +260,45 @@ namespace MarbookApi.Controllers
             var user = await _dbContext.Users.FindAsync(userId);
             if (user == null)
             {
-                _logger.LogWarning(
-                    "User {UserId} not found when creating a post.",
-                    userId);
-
+                _logger.LogWarning("User {UserId} not found when creating a post.", userId);
                 return NotFound($"User with ID {userId} not found.");
+            }
+
+            var trimmedContent = postDto.Content?.Trim() ?? string.Empty;
+            var hasImages = postDto.ImageUrls != null && postDto.ImageUrls.Any(u => !string.IsNullOrWhiteSpace(u));
+
+            if (string.IsNullOrWhiteSpace(trimmedContent) && !hasImages)
+            {
+                return BadRequest("Post must contain text content or at least one image.");
             }
 
             var post = new Post
             {
-                Content = postDto.Content,
+                Content = trimmedContent,
                 Visibility = postDto.Visibility,
                 UserId = userId,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             };
 
+            if (postDto.ImageUrls != null && postDto.ImageUrls.Count > 0)
+            {
+                var order = 0;
+                foreach (var url in postDto.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
+                {
+                    post.Images.Add(new PostImage
+                    {
+                        Url = url.Trim(),
+                        Order = order++,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
             _dbContext.Posts.Add(post);
             await _dbContext.SaveChangesAsync();
 
-            _logger.LogInformation(
-                "Post {PostId} created successfully by user {UserId}.",
-                post.Id,
-                userId);
+            _logger.LogInformation("Post {PostId} created successfully by user {UserId}.", post.Id, userId);
 
             var responseDto = new PostResponseDto
             {
@@ -280,12 +306,14 @@ namespace MarbookApi.Controllers
                 Content = post.Content,
                 Visibility = post.Visibility,
                 UserName = user.Name,
+                UserAvatarUrl = user.AvatarUrl,
                 CreatedAt = post.CreatedAt,
                 UpdatedAt = post.UpdatedAt,
                 UserId = post.UserId,
                 LikesCount = 0,
                 CommentsCount = 0,
-                IsLiked = false
+                IsLiked = false,
+                ImageUrls = post.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList()
             };
 
             return CreatedAtAction(nameof(GetPost), new { id = post.Id }, responseDto);
@@ -296,6 +324,7 @@ namespace MarbookApi.Controllers
         {
             var post = await _dbContext.Posts
                 .Include(p => p.User)
+                .Include(p => p.Images)
                 .FirstOrDefaultAsync(p => p.Id == id);
 
             if (post == null)
@@ -306,27 +335,50 @@ namespace MarbookApi.Controllers
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
             if (post.UserId != userId)
             {
-                _logger.LogWarning(
-                    "User {UserId} attempted to update post {PostId} owned by another user.",
-                    userId,
-                    post.UserId);
-
+                _logger.LogWarning("User {UserId} attempted to update post {PostId} owned by another user.", userId, post.UserId);
                 return Forbid();
             }
 
-            post.Content = postDto.Content;
+            var trimmedContent = postDto.Content?.Trim() ?? string.Empty;
+            var finalImages = postDto.ImageUrls != null
+                ? postDto.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)).ToList()
+                : post.Images.Select(i => i.Url).ToList();
+            var hasImages = finalImages.Count > 0;
+
+            if (string.IsNullOrWhiteSpace(trimmedContent) && !hasImages)
+            {
+                return BadRequest("Post must contain text content or at least one image.");
+            }
+
+            post.Content = trimmedContent;
             if (postDto.Visibility.HasValue)
             {
                 post.Visibility = postDto.Visibility.Value;
             }
+
+            if (postDto.ImageUrls != null)
+            {
+                _dbContext.PostImages.RemoveRange(post.Images);
+                post.Images.Clear();
+
+                var order = 0;
+                foreach (var url in postDto.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)))
+                {
+                    post.Images.Add(new PostImage
+                    {
+                        PostId = post.Id,
+                        Url = url.Trim(),
+                        Order = order++,
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+
             post.UpdatedAt = DateTime.UtcNow;
 
             await _dbContext.SaveChangesAsync();
 
-            _logger.LogInformation(
-                "Post {PostId} updated successfully by user {UserId}",
-                post.Id,
-                userId);
+            _logger.LogInformation("Post {PostId} updated successfully by user {UserId}", post.Id, userId);
 
             var likesCount = await _dbContext.Likes.CountAsync(l => l.PostId == id);
             var commentsCount = await _dbContext.Comments.CountAsync(c => c.PostId == id);
@@ -338,12 +390,14 @@ namespace MarbookApi.Controllers
                 Content = post.Content,
                 Visibility = post.Visibility,
                 UserName = post.User.Name,
+                UserAvatarUrl = post.User.AvatarUrl,
                 CreatedAt = post.CreatedAt,
                 UpdatedAt = post.UpdatedAt,
                 UserId = post.UserId,
                 LikesCount = likesCount,
                 CommentsCount = commentsCount,
-                IsLiked = isLiked
+                IsLiked = isLiked,
+                ImageUrls = post.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList()
             };
 
             return Ok(responseDto);

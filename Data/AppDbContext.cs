@@ -1,4 +1,4 @@
-﻿using MarbookApi.Models;
+using MarbookApi.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace MarbookApi.Data
@@ -7,6 +7,7 @@ namespace MarbookApi.Data
     {
         public DbSet<User> Users { get; set; }
         public DbSet<Post> Posts { get; set; }
+        public DbSet<PostImage> PostImages { get; set; }
         public DbSet<Comment> Comments { get; set; }
         public DbSet<CommentLike> CommentLikes { get; set; }
         public DbSet<Like> Likes { get; set; }
@@ -38,6 +39,12 @@ namespace MarbookApi.Data
 
                 entity.HasIndex(u => u.Email)
                     .IsUnique();
+
+                entity.Property(u => u.AvatarUrl)
+                    .HasMaxLength(500);
+
+                entity.Property(u => u.CoverUrl)
+                    .HasMaxLength(500);
                 
                 entity.Property(u => u.PasswordHash)
                     .HasColumnName("Password")
@@ -81,12 +88,32 @@ namespace MarbookApi.Data
                     .OnDelete(DeleteBehavior.Cascade);
             });
 
+            modelBuilder.Entity<PostImage>(entity =>
+            {
+                entity.HasKey(pi => pi.Id);
+
+                entity.Property(pi => pi.Url)
+                    .IsRequired()
+                    .HasMaxLength(500);
+
+                entity.Property(pi => pi.CreatedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.HasOne(pi => pi.Post)
+                    .WithMany(p => p.Images)
+                    .HasForeignKey(pi => pi.PostId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
             modelBuilder.Entity<Comment>(entity =>
             {
                 entity.HasKey(c => c.Id);
 
                 entity.Property(c => c.Content)
                     .IsRequired()
+                    .HasMaxLength(500);
+
+                entity.Property(c => c.ImageUrl)
                     .HasMaxLength(500);
 
                 entity.Property(c => c.CreatedAt)
@@ -179,4 +206,3 @@ namespace MarbookApi.Data
         }
     }
 }
-

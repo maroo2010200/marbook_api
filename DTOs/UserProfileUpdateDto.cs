@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace MarbookApi.DTOs;
 
@@ -13,6 +13,12 @@ public class UserProfileUpdateDto
 
     [MaxLength(250)]
     public string? Bio { get; set; }
+
+    [MaxLength(500)]
+    public string? AvatarUrl { get; set; }
+
+    [MaxLength(500)]
+    public string? CoverUrl { get; set; }
 
     public DateOnly Birthdate { get; set; }
 }

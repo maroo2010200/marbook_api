@@ -34,11 +34,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJw
     };
 });
 
-
 builder.Services.AddControllers();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
-// Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
+
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
@@ -73,6 +72,7 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IEmailVerificationService, EmailVerificationService>();
+builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
 builder.Services.AddHttpClient<IBrevoEmailSender, BrevoEmailSender>(client =>
 {
     client.BaseAddress = new Uri("https://api.brevo.com/");
@@ -84,7 +84,6 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
-
     app.UseSwaggerUI();
 }
 
@@ -93,6 +92,8 @@ app.UseHttpsRedirection();
 app.UseExceptionHandler();
 
 app.UseCors("AllowFrontend");
+
+app.UseStaticFiles();
 
 app.UseAuthentication();
 

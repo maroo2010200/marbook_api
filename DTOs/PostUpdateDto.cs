@@ -5,9 +5,10 @@ namespace MarbookApi.DTOs;
 
 public class PostUpdateDto
 {
-    [Required]
     [MaxLength(500, ErrorMessage = "Content cannot exceed 500 characters.")]
-    public string Content { get; set; } = string.Empty;
+    public string? Content { get; set; }
 
     public PostVisibility? Visibility { get; set; }
+
+    public List<string>? ImageUrls { get; set; }
 }

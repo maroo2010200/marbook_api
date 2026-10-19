@@ -1,4 +1,4 @@
-﻿namespace MarbookApi.Models;
+namespace MarbookApi.Models;
 
 public class Post
 {
@@ -12,4 +12,5 @@ public class Post
 
     public ICollection<Comment> Comments { get; set; } = new List<Comment>();
     public ICollection<Like> Likes { get; set; } = new List<Like>();
+    public ICollection<PostImage> Images { get; set; } = new List<PostImage>();
 }

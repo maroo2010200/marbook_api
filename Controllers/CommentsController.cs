@@ -1,10 +1,10 @@
-﻿using MarbookApi.Data;
-using Microsoft.AspNetCore.Mvc;
-using MarbookApi.Models;
-using MarbookApi.DTOs;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using MarbookApi.Data;
+using MarbookApi.DTOs;
+using MarbookApi.Models;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace MarbookApi.Controllers
 {
@@ -24,6 +24,7 @@ namespace MarbookApi.Controllers
                 : null;
 
             var query = _dbContext.Comments
+                .Include(c => c.User)
                 .Where(c => c.PostId == postId && c.ParentCommentId == null)
                 .OrderByDescending(c => c.CreatedAt);
 
@@ -38,7 +39,9 @@ namespace MarbookApi.Controllers
                 {
                     Id = c.Id,
                     Content = c.Content,
+                    ImageUrl = c.ImageUrl,
                     UserName = c.User.Name,
+                    UserAvatarUrl = c.User.AvatarUrl,
                     CreatedAt = c.CreatedAt,
                     UpdatedAt = c.UpdatedAt,
                     UserId = c.UserId,
@@ -51,29 +54,10 @@ namespace MarbookApi.Controllers
 
             if (comments.Count > 0)
             {
-                var hierarchy = await _dbContext.Comments
-                    .Where(c => c.PostId == postId && c.ParentCommentId != null)
-                    .Select(c => new { c.Id, c.ParentCommentId })
-                    .ToListAsync();
-
-                var childrenMap = hierarchy
-                    .GroupBy(c => c.ParentCommentId!.Value)
-                    .ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToList());
-
-                int CountAllDescendants(int id)
-                {
-                    if (!childrenMap.TryGetValue(id, out var childIds)) return 0;
-                    int count = childIds.Count;
-                    foreach (var childId in childIds)
-                    {
-                        count += CountAllDescendants(childId);
-                    }
-                    return count;
-                }
-
+                var replyCounts = await GetReplyCountsForPostAsync(postId);
                 foreach (var comment in comments)
                 {
-                    comment.ReplyCount = CountAllDescendants(comment.Id);
+                    comment.ReplyCount = replyCounts.GetValueOrDefault(comment.Id, 0);
                 }
             }
 
@@ -89,6 +73,11 @@ namespace MarbookApi.Controllers
         [HttpPost]
         public async Task<ActionResult<CommentResponseDto>> CreateComment(int postId, CommentCreateDto commentCreateDto)
         {
+            if (string.IsNullOrWhiteSpace(commentCreateDto.Content) && string.IsNullOrWhiteSpace(commentCreateDto.ImageUrl))
+            {
+                return BadRequest("Comment must contain either text or an image/GIF.");
+            }
+
             var post = await _dbContext.Posts.FindAsync(postId);
             if (post == null)
             {
@@ -104,11 +93,13 @@ namespace MarbookApi.Controllers
 
             var comment = new Comment
             {
-                Content = commentCreateDto.Content,
-                UserId = userId,
-                PostId = postId,
+                Content = commentCreateDto.Content?.Trim() ?? string.Empty,
+                ImageUrl = string.IsNullOrWhiteSpace(commentCreateDto.ImageUrl) ? null : commentCreateDto.ImageUrl.Trim(),
                 CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                UpdatedAt = DateTime.UtcNow,
+                PostId = postId,
+                UserId = userId,
+                ParentCommentId = null
             };
 
             _dbContext.Comments.Add(comment);
@@ -118,7 +109,9 @@ namespace MarbookApi.Controllers
             {
                 Id = comment.Id,
                 Content = comment.Content,
+                ImageUrl = comment.ImageUrl,
                 UserName = user.Name,
+                UserAvatarUrl = user.AvatarUrl,
                 CreatedAt = comment.CreatedAt,
                 UpdatedAt = comment.UpdatedAt,
                 UserId = comment.UserId,
@@ -141,36 +134,42 @@ namespace MarbookApi.Controllers
             }
 
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
             var existingLike = await _dbContext.CommentLikes
                 .FirstOrDefaultAsync(cl => cl.CommentId == commentId && cl.UserId == userId);
 
-            bool liked;
             if (existingLike != null)
             {
                 _dbContext.CommentLikes.Remove(existingLike);
-                liked = false;
             }
             else
             {
-                _dbContext.CommentLikes.Add(new CommentLike
+                var newLike = new CommentLike
                 {
                     CommentId = commentId,
                     UserId = userId,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
-                });
-                liked = true;
+                };
+                _dbContext.CommentLikes.Add(newLike);
             }
 
             await _dbContext.SaveChangesAsync();
 
             var likeCount = await _dbContext.CommentLikes.CountAsync(cl => cl.CommentId == commentId);
-            return Ok(new { liked, likeCount });
+            var isLiked = existingLike == null;
+
+            return Ok(new { likeCount, isLiked });
         }
 
         [HttpPost("/api/comments/{commentId:int}/Replies")]
         public async Task<ActionResult<CommentResponseDto>> CreateReply(int commentId, CommentCreateDto replyDto)
         {
+            if (string.IsNullOrWhiteSpace(replyDto.Content) && string.IsNullOrWhiteSpace(replyDto.ImageUrl))
+            {
+                return BadRequest("Reply must contain either text or an image/GIF.");
+            }
+
             var parentComment = await _dbContext.Comments.FindAsync(commentId);
             if (parentComment == null)
             {
@@ -186,12 +185,13 @@ namespace MarbookApi.Controllers
 
             var reply = new Comment
             {
-                Content = replyDto.Content,
-                UserId = userId,
-                PostId = parentComment.PostId,
-                ParentCommentId = commentId,
+                Content = replyDto.Content?.Trim() ?? string.Empty,
+                ImageUrl = string.IsNullOrWhiteSpace(replyDto.ImageUrl) ? null : replyDto.ImageUrl.Trim(),
                 CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                UpdatedAt = DateTime.UtcNow,
+                PostId = parentComment.PostId,
+                UserId = userId,
+                ParentCommentId = commentId
             };
 
             _dbContext.Comments.Add(reply);
@@ -201,7 +201,9 @@ namespace MarbookApi.Controllers
             {
                 Id = reply.Id,
                 Content = reply.Content,
+                ImageUrl = reply.ImageUrl,
                 UserName = user.Name,
+                UserAvatarUrl = user.AvatarUrl,
                 CreatedAt = reply.CreatedAt,
                 UpdatedAt = reply.UpdatedAt,
                 UserId = reply.UserId,
@@ -223,13 +225,16 @@ namespace MarbookApi.Controllers
                 : null;
 
             var replies = await _dbContext.Comments
+                .Include(c => c.User)
                 .Where(c => c.ParentCommentId == commentId)
                 .OrderBy(c => c.CreatedAt)
                 .Select(c => new CommentResponseDto
                 {
                     Id = c.Id,
                     Content = c.Content,
+                    ImageUrl = c.ImageUrl,
                     UserName = c.User.Name,
+                    UserAvatarUrl = c.User.AvatarUrl,
                     CreatedAt = c.CreatedAt,
                     UpdatedAt = c.UpdatedAt,
                     UserId = c.UserId,
@@ -249,29 +254,10 @@ namespace MarbookApi.Controllers
 
                 if (parentComment != null)
                 {
-                    var hierarchy = await _dbContext.Comments
-                        .Where(c => c.PostId == parentComment.PostId && c.ParentCommentId != null)
-                        .Select(c => new { c.Id, c.ParentCommentId })
-                        .ToListAsync();
-
-                    var childrenMap = hierarchy
-                        .GroupBy(c => c.ParentCommentId!.Value)
-                        .ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToList());
-
-                    int CountAllDescendants(int id)
-                    {
-                        if (!childrenMap.TryGetValue(id, out var childIds)) return 0;
-                        int count = childIds.Count;
-                        foreach (var childId in childIds)
-                        {
-                            count += CountAllDescendants(childId);
-                        }
-                        return count;
-                    }
-
+                    var replyCounts = await GetReplyCountsForPostAsync(parentComment.PostId);
                     foreach (var reply in replies)
                     {
-                        reply.ReplyCount = CountAllDescendants(reply.Id);
+                        reply.ReplyCount = replyCounts.GetValueOrDefault(reply.Id, 0);
                     }
                 }
             }
@@ -284,6 +270,11 @@ namespace MarbookApi.Controllers
             int commentId,
             CommentUpdateDto commentUpdateDto)
         {
+            if (string.IsNullOrWhiteSpace(commentUpdateDto.Content) && string.IsNullOrWhiteSpace(commentUpdateDto.ImageUrl))
+            {
+                return BadRequest("Comment must contain either text or an image/GIF.");
+            }
+
             var query = _dbContext.Comments.Include(c => c.User).AsQueryable();
             
             var comment = await query.FirstOrDefaultAsync(c => c.Id == commentId);
@@ -298,7 +289,11 @@ namespace MarbookApi.Controllers
                 return Forbid();
             }
 
-            comment.Content = commentUpdateDto.Content;
+            comment.Content = commentUpdateDto.Content?.Trim() ?? string.Empty;
+            if (commentUpdateDto.ImageUrl != null)
+            {
+                comment.ImageUrl = string.IsNullOrWhiteSpace(commentUpdateDto.ImageUrl) ? null : commentUpdateDto.ImageUrl.Trim();
+            }
             comment.UpdatedAt = DateTime.UtcNow;
 
             await _dbContext.SaveChangesAsync();
@@ -306,37 +301,21 @@ namespace MarbookApi.Controllers
             var likeCount = await _dbContext.CommentLikes.CountAsync(cl => cl.CommentId == commentId);
             var isLiked = await _dbContext.CommentLikes.AnyAsync(cl => cl.CommentId == commentId && cl.UserId == userId);
 
-            var hierarchy = await _dbContext.Comments
-                .Where(c => c.PostId == comment.PostId && c.ParentCommentId != null)
-                .Select(c => new { c.Id, c.ParentCommentId })
-                .ToListAsync();
-
-            var childrenMap = hierarchy
-                .GroupBy(c => c.ParentCommentId!.Value)
-                .ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToList());
-
-            int CountAllDescendants(int id)
-            {
-                if (!childrenMap.TryGetValue(id, out var childIds)) return 0;
-                int count = childIds.Count;
-                foreach (var childId in childIds)
-                {
-                    count += CountAllDescendants(childId);
-                }
-                return count;
-            }
+            var replyCounts = await GetReplyCountsForPostAsync(comment.PostId);
 
             var responseDto = new CommentResponseDto
             {
                 Id = comment.Id,
                 Content = comment.Content,
+                ImageUrl = comment.ImageUrl,
                 UserName = comment.User.Name,
+                UserAvatarUrl = comment.User.AvatarUrl,
                 CreatedAt = comment.CreatedAt,
                 UpdatedAt = comment.UpdatedAt,
                 UserId = comment.UserId,
                 ParentCommentId = comment.ParentCommentId,
                 LikeCount = likeCount,
-                ReplyCount = CountAllDescendants(comment.Id),
+                ReplyCount = replyCounts.GetValueOrDefault(comment.Id, 0),
                 Liked = isLiked
             };
 
@@ -344,15 +323,9 @@ namespace MarbookApi.Controllers
         }
 
         [HttpDelete("/api/comments/{commentId:int}")]
-        public async Task<IActionResult> DeleteComment(int commentId, int? postId = null)
+        public async Task<IActionResult> DeleteComment(int commentId)
         {
-            var query = _dbContext.Comments.AsQueryable();
-            if (postId.HasValue && postId.Value > 0)
-            {
-                query = query.Where(c => c.PostId == postId.Value);
-            }
-
-            var comment = await query.FirstOrDefaultAsync(c => c.Id == commentId);
+            var comment = await _dbContext.Comments.FindAsync(commentId);
             if (comment == null)
             {
                 return NotFound();
@@ -368,6 +341,46 @@ namespace MarbookApi.Controllers
             await _dbContext.SaveChangesAsync();
 
             return NoContent();
+        }
+
+        private async Task<Dictionary<int, int>> GetReplyCountsForPostAsync(int postId)
+        {
+            var hierarchy = await _dbContext.Comments
+                .Where(c => c.PostId == postId && c.ParentCommentId != null)
+                .Select(c => new { c.Id, c.ParentCommentId })
+                .ToListAsync();
+
+            if (hierarchy.Count == 0)
+            {
+                return new Dictionary<int, int>();
+            }
+
+            var childrenMap = hierarchy
+                .GroupBy(c => c.ParentCommentId!.Value)
+                .ToDictionary(g => g.Key, g => g.Select(x => x.Id).ToList());
+
+            int CountDescendants(int id)
+            {
+                if (!childrenMap.TryGetValue(id, out var childIds)) return 0;
+                int count = childIds.Count;
+                foreach (var childId in childIds)
+                {
+                    count += CountDescendants(childId);
+                }
+                return count;
+            }
+
+            var result = new Dictionary<int, int>();
+            foreach (var node in hierarchy)
+            {
+                result[node.Id] = CountDescendants(node.Id);
+            }
+            foreach (var parentId in childrenMap.Keys)
+            {
+                result[parentId] = CountDescendants(parentId);
+            }
+
+            return result;
         }
     }
 }
