@@ -159,7 +159,7 @@ namespace MarbookApi.Controllers
             var likeCount = await _dbContext.CommentLikes.CountAsync(cl => cl.CommentId == commentId);
             var isLiked = existingLike == null;
 
-            return Ok(new { likeCount, isLiked });
+            return Ok(new { likeCount, liked = isLiked, isLiked });
         }
 
         [HttpPost("/api/comments/{commentId:int}/Replies")]
