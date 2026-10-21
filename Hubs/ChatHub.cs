@@ -57,8 +57,17 @@ public class ChatHub(AppDbContext dbContext, ILogger<ChatHub> logger) : Hub
                     IsTyping = isTyping
                 };
 
+                // 1. Broadcast to conversation group
                 var groupName = GetConversationGroupName(conversationId);
                 await Clients.OthersInGroup(groupName).SendAsync("UserTyping", dto);
+
+                // 2. Also broadcast directly to other participant(s) via User channels
+                var otherParticipantUserIds = await _dbContext.ConversationParticipants
+                    .Where(cp => cp.ConversationId == conversationId && cp.UserId != userId)
+                    .Select(cp => cp.UserId.ToString())
+                    .ToListAsync();
+
+                await Clients.Users(otherParticipantUserIds).SendAsync("UserTyping", dto);
             }
         }
     }

@@ -347,6 +347,12 @@ public class ConversationsController(
         var groupName = ChatHub.GetConversationGroupName(id);
         await _hubContext.Clients.Group(groupName).SendAsync("MessageEdited", messageDto);
 
+        var participantUserIds = await _dbContext.ConversationParticipants
+            .Where(cp => cp.ConversationId == id)
+            .Select(cp => cp.UserId.ToString())
+            .ToListAsync();
+        await _hubContext.Clients.Users(participantUserIds).SendAsync("MessageEdited", messageDto);
+
         return Ok(messageDto);
     }
 
@@ -367,12 +373,19 @@ public class ConversationsController(
         await _dbContext.SaveChangesAsync();
 
         var groupName = ChatHub.GetConversationGroupName(id);
-        await _hubContext.Clients.Group(groupName).SendAsync("MessagesRead", new
+        var readPayload = new
         {
             ConversationId = id,
             ReaderUserId = currentUserId,
             ReadAt = participant.LastReadAt
-        });
+        };
+        await _hubContext.Clients.Group(groupName).SendAsync("MessagesRead", readPayload);
+
+        var participantUserIds = await _dbContext.ConversationParticipants
+            .Where(cp => cp.ConversationId == id)
+            .Select(cp => cp.UserId.ToString())
+            .ToListAsync();
+        await _hubContext.Clients.Users(participantUserIds).SendAsync("MessagesRead", readPayload);
 
         return NoContent();
     }
@@ -408,14 +421,21 @@ public class ConversationsController(
         await _dbContext.SaveChangesAsync();
 
         var groupName = ChatHub.GetConversationGroupName(id);
-        await _hubContext.Clients.Group(groupName).SendAsync("MessageDeleted", new
+        var deletePayload = new
         {
             ConversationId = id,
             MessageId = messageId,
             Content = "This message was deleted",
             IsDeleted = true,
             UpdatedAt = now
-        });
+        };
+        await _hubContext.Clients.Group(groupName).SendAsync("MessageDeleted", deletePayload);
+
+        var participantUserIds = await _dbContext.ConversationParticipants
+            .Where(cp => cp.ConversationId == id)
+            .Select(cp => cp.UserId.ToString())
+            .ToListAsync();
+        await _hubContext.Clients.Users(participantUserIds).SendAsync("MessageDeleted", deletePayload);
 
         return NoContent();
     }
@@ -447,7 +467,7 @@ public class ConversationsController(
 
         var sender = await _dbContext.Users.FindAsync(senderUserId);
 
-        var messageDto = new MessageDto
+        var senderMessageDto = new MessageDto
         {
             Id = message.Id,
             ConversationId = conversation.Id,
@@ -461,15 +481,34 @@ public class ConversationsController(
             IsMine = true
         };
 
+        var recipientMessageDto = new MessageDto
+        {
+            Id = message.Id,
+            ConversationId = conversation.Id,
+            SenderUserId = senderUserId,
+            SenderName = sender?.Name ?? string.Empty,
+            SenderAvatarUrl = sender?.AvatarUrl,
+            Content = message.Content,
+            CreatedAt = message.CreatedAt,
+            UpdatedAt = null,
+            IsDeleted = false,
+            IsMine = false
+        };
+
         var groupName = ChatHub.GetConversationGroupName(conversation.Id);
 
-        // 1. Send to all in conversation group
-        await _hubContext.Clients.Group(groupName).SendAsync("ReceiveMessage", messageDto);
+        // 1. Send to all in conversation group with recipient view
+        await _hubContext.Clients.Group(groupName).SendAsync("ReceiveMessage", recipientMessageDto);
 
-        // 2. Send update notification to other participant(s) for sidebar/badges
+        // 2. Send specifically to sender with IsMine = true
+        await _hubContext.Clients.User(senderUserId.ToString()).SendAsync("ReceiveMessage", senderMessageDto);
+
+        // 3. Send update notification to other participant(s) for sidebar/badges with IsMine = false
         var otherParticipants = conversation.Participants.Where(p => p.UserId != senderUserId).ToList();
         foreach (var other in otherParticipants)
         {
+            await _hubContext.Clients.User(other.UserId.ToString()).SendAsync("ReceiveMessage", recipientMessageDto);
+
             var unreadCount = await _dbContext.Messages
                 .CountAsync(m => m.ConversationId == conversation.Id &&
                                  m.SenderUserId != other.UserId &&
@@ -487,14 +526,14 @@ public class ConversationsController(
                     Username = sender?.Username,
                     AvatarUrl = sender?.AvatarUrl
                 },
-                LastMessage = messageDto,
+                LastMessage = recipientMessageDto,
                 UnreadCount = unreadCount
             };
 
             await _hubContext.Clients.User(other.UserId.ToString()).SendAsync("ConversationUpdated", summary);
         }
 
-        return messageDto;
+        return senderMessageDto;
     }
 
     private async Task<ConversationSummaryDto> BuildSummaryDtoAsync(Conversation conversation, int currentUserId)
