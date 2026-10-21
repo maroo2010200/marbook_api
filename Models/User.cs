@@ -1,4 +1,4 @@
-namespace MarbookApi.Models
+﻿namespace MarbookApi.Models
 {
     public class User
     {
@@ -22,5 +22,7 @@ namespace MarbookApi.Models
         public ICollection<Like> Likes { get; set; } = new List<Like>();
         public ICollection<Follow> Followers { get; set; } = new List<Follow>();
         public ICollection<Follow> Following { get; set; } = new List<Follow>();
+        public ICollection<ConversationParticipant> ConversationParticipants { get; set; } = new List<ConversationParticipant>();
+        public ICollection<Message> SentMessages { get; set; } = new List<Message>();
     }
 }

@@ -1,4 +1,4 @@
-using MarbookApi;
+﻿using MarbookApi;
 using MarbookApi.Data;
 using MarbookApi.Exceptions;
 using MarbookApi.Hubs;
@@ -119,5 +119,6 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapHub<NotificationHub>("/hubs/notifications");
+app.MapHub<ChatHub>("/hubs/chat");
 
 app.Run();
