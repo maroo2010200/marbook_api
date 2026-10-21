@@ -2,6 +2,7 @@ using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
 using MarbookApi.Models;
+using MarbookApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,9 +12,13 @@ namespace MarbookApi.Controllers
     [ApiController]
     [Route("api/users/{userId:int}")]
     [Authorize]
-    public class FollowsController(AppDbContext dbContext, ILogger<FollowsController> logger) : ControllerBase
+    public class FollowsController(
+        AppDbContext dbContext,
+        INotificationService notificationService,
+        ILogger<FollowsController> logger) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
+        private readonly INotificationService _notificationService = notificationService;
         private readonly ILogger _logger = logger;
 
         [HttpPost("follow")]
@@ -54,6 +59,11 @@ namespace MarbookApi.Controllers
             _dbContext.Follows.Add(follow);
             await _dbContext.SaveChangesAsync();
 
+            await _notificationService.CreateNotificationAsync(
+                userId,
+                followerId,
+                NotificationType.UserFollowed);
+
             _logger.LogInformation("User {FollowerId} started following User {FolloweeId}", followerId, userId);
 
             return Created();
@@ -78,6 +88,11 @@ namespace MarbookApi.Controllers
 
             _dbContext.Follows.Remove(follow);
             await _dbContext.SaveChangesAsync();
+
+            await _notificationService.DeleteNotificationAsync(
+                userId,
+                followerId,
+                NotificationType.UserFollowed);
 
             _logger.LogInformation("User {FollowerId} unfollowed User {FolloweeId}", followerId, userId);
 

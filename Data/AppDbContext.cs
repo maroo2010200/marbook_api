@@ -12,6 +12,7 @@ namespace MarbookApi.Data
         public DbSet<CommentLike> CommentLikes { get; set; }
         public DbSet<Like> Likes { get; set; }
         public DbSet<Follow> Follows { get; set; }
+        public DbSet<Notification> Notifications { get; set; }
         public DbSet<EmailVerification> EmailVerifications { get; set; } = null!;
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -201,6 +202,42 @@ namespace MarbookApi.Data
                 entity.HasOne(f => f.Followee)
                     .WithMany(u => u.Followers)
                     .HasForeignKey(f => f.FolloweeId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<Notification>(entity =>
+            {
+                entity.HasKey(n => n.Id);
+
+                entity.Property(n => n.Type)
+                    .IsRequired();
+
+                entity.Property(n => n.IsRead)
+                    .HasDefaultValue(false);
+
+                entity.Property(n => n.CreatedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.HasIndex(n => new { n.RecipientUserId, n.IsRead, n.CreatedAt });
+
+                entity.HasOne(n => n.RecipientUser)
+                    .WithMany()
+                    .HasForeignKey(n => n.RecipientUserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(n => n.ActorUser)
+                    .WithMany()
+                    .HasForeignKey(n => n.ActorUserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(n => n.TargetPost)
+                    .WithMany()
+                    .HasForeignKey(n => n.TargetPostId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(n => n.TargetComment)
+                    .WithMany()
+                    .HasForeignKey(n => n.TargetCommentId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
         }
