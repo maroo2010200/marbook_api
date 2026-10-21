@@ -2,6 +2,7 @@ using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
 using MarbookApi.Models;
+using MarbookApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -11,9 +12,10 @@ namespace MarbookApi.Controllers
     [ApiController]
     [Route("api/posts/{postId:int}/[controller]")]
     [Authorize]
-    public class CommentsController(AppDbContext dbContext) : ControllerBase
+    public class CommentsController(AppDbContext dbContext, INotificationService notificationService) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
+        private readonly INotificationService _notificationService = notificationService;
 
         [HttpGet]
         [AllowAnonymous]
@@ -105,6 +107,13 @@ namespace MarbookApi.Controllers
             _dbContext.Comments.Add(comment);
             await _dbContext.SaveChangesAsync();
 
+            await _notificationService.CreateNotificationAsync(
+                post.UserId,
+                userId,
+                NotificationType.CommentCreated,
+                postId,
+                comment.Id);
+
             var commentResponseDto = new CommentResponseDto
             {
                 Id = comment.Id,
@@ -159,6 +168,25 @@ namespace MarbookApi.Controllers
             var likeCount = await _dbContext.CommentLikes.CountAsync(cl => cl.CommentId == commentId);
             var isLiked = existingLike == null;
 
+            if (isLiked)
+            {
+                await _notificationService.CreateNotificationAsync(
+                    comment.UserId,
+                    userId,
+                    NotificationType.CommentLiked,
+                    comment.PostId,
+                    commentId);
+            }
+            else
+            {
+                await _notificationService.DeleteNotificationAsync(
+                    comment.UserId,
+                    userId,
+                    NotificationType.CommentLiked,
+                    comment.PostId,
+                    commentId);
+            }
+
             return Ok(new { likeCount, liked = isLiked, isLiked });
         }
 
@@ -196,6 +224,13 @@ namespace MarbookApi.Controllers
 
             _dbContext.Comments.Add(reply);
             await _dbContext.SaveChangesAsync();
+
+            await _notificationService.CreateNotificationAsync(
+                parentComment.UserId,
+                userId,
+                NotificationType.ReplyCreated,
+                parentComment.PostId,
+                reply.Id);
 
             var response = new CommentResponseDto
             {

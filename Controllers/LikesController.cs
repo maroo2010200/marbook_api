@@ -1,19 +1,21 @@
-using MarbookApi.Data;
-using Microsoft.AspNetCore.Mvc;
-using MarbookApi.Models;
-using MarbookApi.DTOs;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using MarbookApi.Data;
+using MarbookApi.DTOs;
+using MarbookApi.Models;
+using MarbookApi.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/posts/{postId:int}/[controller]")]
     [Authorize]
-    public class LikesController(AppDbContext dbContext) : ControllerBase
+    public class LikesController(AppDbContext dbContext, INotificationService notificationService) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
+        private readonly INotificationService _notificationService = notificationService;
 
         [HttpPost]
         public async Task<ActionResult<Like>> CreateLike(int postId)
@@ -49,6 +51,12 @@ namespace MarbookApi.Controllers
             _dbContext.Likes.Add(like);
             await _dbContext.SaveChangesAsync();
 
+            await _notificationService.CreateNotificationAsync(
+                post.UserId,
+                userId,
+                NotificationType.PostLiked,
+                postId);
+
             var likeCount = await _dbContext.Likes.CountAsync(l => l.PostId == postId);
             return Ok(new { liked = true, likeCount });
         }
@@ -64,8 +72,19 @@ namespace MarbookApi.Controllers
                 return NotFound("Like not found.");
             }
 
+            var post = await _dbContext.Posts.FindAsync(postId);
+
             _dbContext.Likes.Remove(like);
             await _dbContext.SaveChangesAsync();
+
+            if (post != null)
+            {
+                await _notificationService.DeleteNotificationAsync(
+                    post.UserId,
+                    userId,
+                    NotificationType.PostLiked,
+                    postId);
+            }
 
             var likeCount = await _dbContext.Likes.CountAsync(l => l.PostId == postId);
             return Ok(new { liked = false, likeCount });

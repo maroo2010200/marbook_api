@@ -41,6 +41,10 @@ namespace MarbookApi.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("NOW()");
 
+                    b.Property<string>("ImageUrl")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
                     b.Property<int?>("ParentCommentId")
                         .HasColumnType("integer");
 
@@ -180,6 +184,52 @@ namespace MarbookApi.Migrations
                         .IsUnique();
 
                     b.ToTable("Likes");
+                });
+
+            modelBuilder.Entity("MarbookApi.Models.Notification", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ActorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<bool>("IsRead")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("RecipientUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("TargetCommentId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("TargetPostId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("TargetCommentId");
+
+                    b.HasIndex("TargetPostId");
+
+                    b.HasIndex("RecipientUserId", "IsRead", "CreatedAt");
+
+                    b.ToTable("Notifications");
                 });
 
             modelBuilder.Entity("MarbookApi.Models.Post", b =>
@@ -412,6 +462,39 @@ namespace MarbookApi.Migrations
                     b.Navigation("Post");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("MarbookApi.Models.Notification", b =>
+                {
+                    b.HasOne("MarbookApi.Models.User", "ActorUser")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MarbookApi.Models.User", "RecipientUser")
+                        .WithMany()
+                        .HasForeignKey("RecipientUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MarbookApi.Models.Comment", "TargetComment")
+                        .WithMany()
+                        .HasForeignKey("TargetCommentId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("MarbookApi.Models.Post", "TargetPost")
+                        .WithMany()
+                        .HasForeignKey("TargetPostId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("ActorUser");
+
+                    b.Navigation("RecipientUser");
+
+                    b.Navigation("TargetComment");
+
+                    b.Navigation("TargetPost");
                 });
 
             modelBuilder.Entity("MarbookApi.Models.Post", b =>
