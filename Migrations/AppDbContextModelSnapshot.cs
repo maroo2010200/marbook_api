@@ -104,6 +104,63 @@ namespace MarbookApi.Migrations
                     b.ToTable("CommentLikes");
                 });
 
+            modelBuilder.Entity("MarbookApi.Models.Conversation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UpdatedAt");
+
+                    b.ToTable("Conversations");
+                });
+
+            modelBuilder.Entity("MarbookApi.Models.ConversationParticipant", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("ConversationId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("JoinedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<DateTime?>("LastReadAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("ConversationId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("ConversationParticipants");
+                });
+
             modelBuilder.Entity("MarbookApi.Models.EmailVerification", b =>
                 {
                     b.Property<int>("Id")
@@ -184,6 +241,47 @@ namespace MarbookApi.Migrations
                         .IsUnique();
 
                     b.ToTable("Likes");
+                });
+
+            modelBuilder.Entity("MarbookApi.Models.Message", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<int>("ConversationId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("SenderUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SenderUserId");
+
+                    b.HasIndex("ConversationId", "CreatedAt");
+
+                    b.ToTable("Messages");
                 });
 
             modelBuilder.Entity("MarbookApi.Models.Notification", b =>
@@ -415,6 +513,25 @@ namespace MarbookApi.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("MarbookApi.Models.ConversationParticipant", b =>
+                {
+                    b.HasOne("MarbookApi.Models.Conversation", "Conversation")
+                        .WithMany("Participants")
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MarbookApi.Models.User", "User")
+                        .WithMany("ConversationParticipants")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Conversation");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("MarbookApi.Models.EmailVerification", b =>
                 {
                     b.HasOne("MarbookApi.Models.User", "User")
@@ -462,6 +579,25 @@ namespace MarbookApi.Migrations
                     b.Navigation("Post");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("MarbookApi.Models.Message", b =>
+                {
+                    b.HasOne("MarbookApi.Models.Conversation", "Conversation")
+                        .WithMany("Messages")
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MarbookApi.Models.User", "SenderUser")
+                        .WithMany("SentMessages")
+                        .HasForeignKey("SenderUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Conversation");
+
+                    b.Navigation("SenderUser");
                 });
 
             modelBuilder.Entity("MarbookApi.Models.Notification", b =>
@@ -526,6 +662,13 @@ namespace MarbookApi.Migrations
                     b.Navigation("Replies");
                 });
 
+            modelBuilder.Entity("MarbookApi.Models.Conversation", b =>
+                {
+                    b.Navigation("Messages");
+
+                    b.Navigation("Participants");
+                });
+
             modelBuilder.Entity("MarbookApi.Models.Post", b =>
                 {
                     b.Navigation("Comments");
@@ -539,6 +682,8 @@ namespace MarbookApi.Migrations
                 {
                     b.Navigation("Comments");
 
+                    b.Navigation("ConversationParticipants");
+
                     b.Navigation("Followers");
 
                     b.Navigation("Following");
@@ -546,6 +691,8 @@ namespace MarbookApi.Migrations
                     b.Navigation("Likes");
 
                     b.Navigation("Posts");
+
+                    b.Navigation("SentMessages");
                 });
 #pragma warning restore 612, 618
         }

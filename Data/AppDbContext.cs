@@ -1,4 +1,4 @@
-using MarbookApi.Models;
+﻿using MarbookApi.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace MarbookApi.Data
@@ -14,6 +14,9 @@ namespace MarbookApi.Data
         public DbSet<Follow> Follows { get; set; }
         public DbSet<Notification> Notifications { get; set; }
         public DbSet<EmailVerification> EmailVerifications { get; set; } = null!;
+        public DbSet<Conversation> Conversations { get; set; }
+        public DbSet<ConversationParticipant> ConversationParticipants { get; set; }
+        public DbSet<Message> Messages { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -238,6 +241,67 @@ namespace MarbookApi.Data
                 entity.HasOne(n => n.TargetComment)
                     .WithMany()
                     .HasForeignKey(n => n.TargetCommentId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<Conversation>(entity =>
+            {
+                entity.HasKey(c => c.Id);
+
+                entity.Property(c => c.CreatedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.Property(c => c.UpdatedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.HasIndex(c => c.UpdatedAt);
+            });
+
+            modelBuilder.Entity<ConversationParticipant>(entity =>
+            {
+                entity.HasKey(cp => cp.Id);
+
+                entity.HasIndex(cp => new { cp.ConversationId, cp.UserId })
+                    .IsUnique();
+
+                entity.Property(cp => cp.JoinedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.HasOne(cp => cp.Conversation)
+                    .WithMany(c => c.Participants)
+                    .HasForeignKey(cp => cp.ConversationId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(cp => cp.User)
+                    .WithMany(u => u.ConversationParticipants)
+                    .HasForeignKey(cp => cp.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<Message>(entity =>
+            {
+                entity.HasKey(m => m.Id);
+
+                entity.Property(m => m.Content)
+                    .IsRequired()
+                    .HasMaxLength(2000);
+
+                entity.Property(m => m.CreatedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.Property(m => m.IsDeleted)
+                    .HasDefaultValue(false);
+
+                entity.HasIndex(m => new { m.ConversationId, m.CreatedAt });
+
+                entity.HasOne(m => m.Conversation)
+                    .WithMany(c => c.Messages)
+                    .HasForeignKey(m => m.ConversationId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(m => m.SenderUser)
+                    .WithMany(u => u.SentMessages)
+                    .HasForeignKey(m => m.SenderUserId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
         }
