@@ -1,13 +1,20 @@
 using MarbookApi.Data;
+using MarbookApi.DTOs;
+using MarbookApi.Hubs;
 using MarbookApi.Models;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace MarbookApi.Services;
 
-public class NotificationService(AppDbContext dbContext, ILogger<NotificationService> logger) : INotificationService
+public class NotificationService(
+    AppDbContext dbContext,
+    IHubContext<NotificationHub> hubContext,
+    ILogger<NotificationService> logger) : INotificationService
 {
     private readonly AppDbContext _dbContext = dbContext;
+    private readonly IHubContext<NotificationHub> _hubContext = hubContext;
     private readonly ILogger<NotificationService> _logger = logger;
 
     public async Task CreateNotificationAsync(
@@ -35,31 +42,57 @@ public class NotificationService(AppDbContext dbContext, ILogger<NotificationSer
                     n.TargetCommentId == targetCommentId &&
                     !n.IsRead);
 
+            Notification notification;
+
             if (existingUnread != null)
             {
                 // Already notified and unread, bump timestamp
                 existingUnread.CreatedAt = DateTime.UtcNow;
                 await _dbContext.SaveChangesAsync();
-                return;
+                notification = existingUnread;
             }
-
-            var notification = new Notification
+            else
             {
-                RecipientUserId = recipientUserId,
-                ActorUserId = actorUserId,
-                Type = type,
-                TargetPostId = targetPostId,
-                TargetCommentId = targetCommentId,
-                IsRead = false,
-                CreatedAt = DateTime.UtcNow
-            };
+                notification = new Notification
+                {
+                    RecipientUserId = recipientUserId,
+                    ActorUserId = actorUserId,
+                    Type = type,
+                    TargetPostId = targetPostId,
+                    TargetCommentId = targetCommentId,
+                    IsRead = false,
+                    CreatedAt = DateTime.UtcNow
+                };
 
-            _dbContext.Notifications.Add(notification);
-            await _dbContext.SaveChangesAsync();
+                _dbContext.Notifications.Add(notification);
+                await _dbContext.SaveChangesAsync();
+            }
 
             _logger.LogInformation(
                 "Created {Type} notification from user {ActorId} to user {RecipientId}",
                 type, actorUserId, recipientUserId);
+
+            // 3. Real-time push via SignalR
+            var actorUser = await _dbContext.Users.FindAsync(actorUserId);
+            var dto = new NotificationResponseDto
+            {
+                Id = notification.Id,
+                RecipientUserId = notification.RecipientUserId,
+                ActorUserId = notification.ActorUserId,
+                ActorName = actorUser?.Name ?? string.Empty,
+                ActorAvatarUrl = actorUser?.AvatarUrl,
+                Type = notification.Type.ToString(),
+                TargetPostId = notification.TargetPostId,
+                TargetCommentId = notification.TargetCommentId,
+                IsRead = notification.IsRead,
+                CreatedAt = notification.CreatedAt
+            };
+
+            var unreadCount = await _dbContext.Notifications
+                .CountAsync(n => n.RecipientUserId == recipientUserId && !n.IsRead);
+
+            await _hubContext.Clients.User(recipientUserId.ToString())
+                .SendAsync("ReceiveNotification", dto, unreadCount);
         }
         catch (Exception ex)
         {
@@ -93,6 +126,12 @@ public class NotificationService(AppDbContext dbContext, ILogger<NotificationSer
                 _logger.LogInformation(
                     "Removed unread {Type} notification from user {ActorId} to user {RecipientId}",
                     type, actorUserId, recipientUserId);
+
+                var unreadCount = await _dbContext.Notifications
+                    .CountAsync(n => n.RecipientUserId == recipientUserId && !n.IsRead);
+
+                await _hubContext.Clients.User(recipientUserId.ToString())
+                    .SendAsync("NotificationDeleted", notification.Id, unreadCount);
             }
         }
         catch (Exception ex)
