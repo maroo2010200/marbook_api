@@ -30,10 +30,7 @@ namespace MarbookApi.Controllers
                 return Unauthorized("Invalid user token.");
             }
 
-            if (followerId == userId)
-            {
-                return BadRequest("You cannot follow yourself.");
-            }
+            // Self-follow allowed
 
             var followeeExists = await _dbContext.Users.AnyAsync(u => u.Id == userId);
             if (!followeeExists)
@@ -59,10 +56,13 @@ namespace MarbookApi.Controllers
             _dbContext.Follows.Add(follow);
             await _dbContext.SaveChangesAsync();
 
-            await _notificationService.CreateNotificationAsync(
-                userId,
-                followerId,
-                NotificationType.UserFollowed);
+            if (followerId != userId)
+            {
+                await _notificationService.CreateNotificationAsync(
+                    userId,
+                    followerId,
+                    NotificationType.UserFollowed);
+            }
 
             _logger.LogInformation("User {FollowerId} started following User {FolloweeId}", followerId, userId);
 
@@ -89,10 +89,13 @@ namespace MarbookApi.Controllers
             _dbContext.Follows.Remove(follow);
             await _dbContext.SaveChangesAsync();
 
-            await _notificationService.DeleteNotificationAsync(
-                userId,
-                followerId,
-                NotificationType.UserFollowed);
+            if (followerId != userId)
+            {
+                await _notificationService.DeleteNotificationAsync(
+                    userId,
+                    followerId,
+                    NotificationType.UserFollowed);
+            }
 
             _logger.LogInformation("User {FollowerId} unfollowed User {FolloweeId}", followerId, userId);
 
@@ -116,6 +119,9 @@ namespace MarbookApi.Controllers
             var totalCount = await query.CountAsync();
             var skip = (pagination.PageNumber - 1) * pagination.PageSize;
 
+            var currentUserIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            int.TryParse(currentUserIdStr, out int currentUserId);
+
             var followers = await query
                 .OrderBy(u => u.Name)
                 .Skip(skip)
@@ -124,7 +130,10 @@ namespace MarbookApi.Controllers
                 {
                     Id = u.Id,
                     Username = u.Username,
-                    Name = u.Name
+                    Name = u.Name,
+                    AvatarUrl = u.AvatarUrl,
+                    IsMe = currentUserId > 0 && u.Id == currentUserId,
+                    IsFollowing = currentUserId > 0 && _dbContext.Follows.Any(f => f.FollowerId == currentUserId && f.FolloweeId == u.Id)
                 }).ToListAsync();
 
             return Ok(new PagedResult<UserSearchDto>
@@ -153,6 +162,9 @@ namespace MarbookApi.Controllers
             var totalCount = await query.CountAsync();
             var skip = (pagination.PageNumber - 1) * pagination.PageSize;
 
+            var currentUserIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            int.TryParse(currentUserIdStr, out int currentUserId);
+
             var following = await query
                 .OrderBy(u => u.Name)
                 .Skip(skip)
@@ -161,7 +173,10 @@ namespace MarbookApi.Controllers
                 {
                     Id = u.Id,
                     Username = u.Username,
-                    Name = u.Name
+                    Name = u.Name,
+                    AvatarUrl = u.AvatarUrl,
+                    IsMe = currentUserId > 0 && u.Id == currentUserId,
+                    IsFollowing = currentUserId > 0 && (userId == currentUserId || _dbContext.Follows.Any(f => f.FollowerId == currentUserId && f.FolloweeId == u.Id))
                 }).ToListAsync();
 
             return Ok(new PagedResult<UserSearchDto>
