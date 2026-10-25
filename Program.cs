@@ -89,7 +89,21 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IEmailVerificationService, EmailVerificationService>();
-builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+
+// Bind Cloudinary settings
+builder.Services.Configure<CloudinarySettings>(
+    builder.Configuration.GetSection("Cloudinary"));
+
+var cloudinaryConfig = builder.Configuration.GetSection("Cloudinary");
+if (!string.IsNullOrEmpty(cloudinaryConfig["CloudName"]))
+{
+    builder.Services.AddScoped<IFileStorageService, CloudinaryFileStorageService>();
+}
+else
+{
+    builder.Services.AddScoped<IFileStorageService, LocalFileStorageService>();
+}
+
 builder.Services.AddScoped<INotificationService, NotificationService>();
 builder.Services.AddHttpClient<IBrevoEmailSender, BrevoEmailSender>(client =>
 {
