@@ -6,4 +6,8 @@ public class UserSearchDto
     public string? Username { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? AvatarUrl { get; set; }
+    public string? Bio { get; set; }
+    public int FollowersCount { get; set; }
+    public bool IsFollowing { get; set; }
+    public bool IsMe { get; set; }
 }

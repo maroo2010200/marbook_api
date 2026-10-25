@@ -13,5 +13,8 @@ public class PostFtsResultDto
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public double RelevanceScore { get; set; }
+    public int LikesCount { get; set; }
+    public int CommentsCount { get; set; }
+    public bool IsLiked { get; set; }
     public List<string> ImageUrls { get; set; } = new();
 }

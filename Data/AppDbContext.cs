@@ -22,6 +22,7 @@ namespace MarbookApi.Data
         {
             base.OnModelCreating(modelBuilder);
             modelBuilder.HasPostgresExtension("citext");
+            modelBuilder.HasPostgresExtension("pg_trgm");
 
             modelBuilder.Entity<User>(entity =>
             {

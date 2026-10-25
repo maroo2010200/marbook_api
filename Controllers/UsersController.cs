@@ -147,17 +147,29 @@ namespace MarbookApi.Controllers
                 return BadRequest("Search content must be valid.");
             }
 
+            var term = search.Trim();
+            int? currentUserId = User.Identity?.IsAuthenticated == true &&
+                int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid)
+                ? uid
+                : null;
+
             var query = _dbContext.Users
-                .Where(u => (
-                    u.Username != null && EF.Functions.ILike(u.Username, $"{search}%"))
-                    || EF.Functions.ILike(u.Name, $"{search}%")
+                .Where(u =>
+                    (u.Username != null && (
+                        EF.Functions.ILike(u.Username, $"%{term}%")
+                        || EF.Functions.TrigramsSimilarity(u.Username, term) > 0.2
+                    ))
+                    || EF.Functions.ILike(u.Name, $"%{term}%")
+                    || EF.Functions.TrigramsSimilarity(u.Name, term) > 0.2
                 );
 
             var totalCount = await query.CountAsync();
             var skip = (pagination.PageNumber - 1) * pagination.PageSize;
 
             var users = await query
-                .OrderBy(u => u.Name)
+                .OrderByDescending(u => EF.Functions.ILike(u.Name, $"{term}%") || (u.Username != null && EF.Functions.ILike(u.Username, $"{term}%")))
+                .ThenByDescending(u => EF.Functions.TrigramsSimilarity(u.Name, term))
+                .ThenBy(u => u.Name)
                 .Skip(skip)
                 .Take(pagination.PageSize)
                 .Select(u => new UserSearchDto
@@ -165,8 +177,13 @@ namespace MarbookApi.Controllers
                     Id = u.Id,
                     Username = u.Username,
                     Name = u.Name,
-                    AvatarUrl = u.AvatarUrl
-                }).ToListAsync();
+                    AvatarUrl = u.AvatarUrl,
+                    Bio = u.Bio,
+                    FollowersCount = u.Followers.Count,
+                    IsFollowing = currentUserId.HasValue && u.Followers.Any(f => f.FollowerId == currentUserId.Value),
+                    IsMe = currentUserId.HasValue && u.Id == currentUserId.Value
+                })
+                .ToListAsync();
 
             return Ok(new PagedResult<UserSearchDto>
             {

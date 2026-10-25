@@ -167,6 +167,9 @@ namespace MarbookApi.Controllers
                     UserId = p.UserId,
                     RelevanceScore = EF.Functions.ToTsVector("english", p.Content)
                         .Rank(EF.Functions.WebSearchToTsQuery("english", search)),
+                    LikesCount = p.Likes.Count(),
+                    CommentsCount = p.Comments.Count(),
+                    IsLiked = currentUserId.HasValue && p.Likes.Any(l => l.UserId == currentUserId.Value),
                     ImageUrls = p.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList()
                 })
                 .OrderByDescending(p => p.RelevanceScore)
