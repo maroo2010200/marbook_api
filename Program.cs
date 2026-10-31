@@ -1,4 +1,4 @@
-﻿using MarbookApi;
+using MarbookApi;
 using MarbookApi.Data;
 using MarbookApi.Exceptions;
 using MarbookApi.Hubs;
@@ -8,7 +8,10 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using System.Reflection.Metadata;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -87,6 +90,84 @@ builder.Services.AddCors(options =>
         });
 });
 
+// Rate Limiting Configuration (.NET 10 Built-in)
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        context.HttpContext.Response.ContentType = "application/problem+json";
+
+        var retryAfter = 60;
+        if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfterSpan))
+        {
+            retryAfter = (int)Math.Ceiling(retryAfterSpan.TotalSeconds);
+            context.HttpContext.Response.Headers.RetryAfter = retryAfter.ToString();
+        }
+
+        await context.HttpContext.Response.WriteAsJsonAsync(new
+        {
+            status = StatusCodes.Status429TooManyRequests,
+            title = "Too Many Requests",
+            detail = $"Rate limit exceeded. Please try again after {retryAfter} seconds.",
+            retryAfterSeconds = retryAfter
+        }, cancellationToken: token);
+    };
+
+    // Policy 1: Auth endpoints - 10 requests / 1 min per IP (Brute-force & email quota protection)
+    options.AddPolicy("auth-policy", httpContext =>
+    {
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? "unknown_ip";
+
+        return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+
+    // Policy 2: Chat messaging - Token Bucket per User ID (Allows bursts up to 15, replenishes 1 token every 2s)
+    options.AddPolicy("chat-policy", httpContext =>
+    {
+        var userId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous";
+
+        return RateLimitPartition.GetTokenBucketLimiter(userId, _ => new TokenBucketRateLimiterOptions
+        {
+            TokenLimit = 15,
+            TokensPerPeriod = 1,
+            ReplenishmentPeriod = TimeSpan.FromSeconds(2),
+            AutoReplenishment = true,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+
+    // Policy 3: Post creation - Sliding Window per User ID (Max 5 posts / 1 min)
+    options.AddPolicy("post-policy", httpContext =>
+    {
+        var userId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? "anonymous";
+
+        return RateLimitPartition.GetSlidingWindowLimiter(userId, _ => new SlidingWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(1),
+            SegmentsPerWindow = 3,
+            QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+            QueueLimit = 0
+        });
+    });
+});
+
 builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IEmailVerificationService, EmailVerificationService>();
 
@@ -128,6 +209,8 @@ app.UseCors("AllowFrontend");
 app.UseStaticFiles();
 
 app.UseAuthentication();
+
+app.UseRateLimiter();
 
 app.UseAuthorization();
 

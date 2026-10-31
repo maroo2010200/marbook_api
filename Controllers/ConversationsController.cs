@@ -1,9 +1,10 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
 using MarbookApi.Hubs;
 using MarbookApi.Models;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -267,6 +268,7 @@ public class ConversationsController(
     }
 
     [HttpPost("{id:int}/messages")]
+    [EnableRateLimiting("chat-policy")]
     public async Task<ActionResult<MessageDto>> SendMessage(int id, [FromBody] SendMessageDto dto)
     {
         var currentUserId = CurrentUserId;
