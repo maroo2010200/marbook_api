@@ -3,12 +3,14 @@ using MarbookApi.DTOs;
 using MarbookApi.Models;
 using MarbookApi.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace MarbookApi.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[EnableRateLimiting("auth-policy")]
 public class AuthController(AppDbContext dbContext, IJwtService jwtService, ILogger<AuthController> logger, IEmailVerificationService emailVerificationService) : ControllerBase
 {
     private readonly AppDbContext _dbContext = dbContext;

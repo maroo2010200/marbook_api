@@ -1,9 +1,10 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
 using MarbookApi.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace MarbookApi.Controllers
@@ -254,6 +255,7 @@ namespace MarbookApi.Controllers
         }
 
         [HttpPost]
+        [EnableRateLimiting("post-policy")]
         public async Task<ActionResult<PostResponseDto>> CreatePost(PostCreateDto postDto)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
