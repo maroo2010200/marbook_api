@@ -6,6 +6,7 @@ using MarbookApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
 
 namespace MarbookApi.Controllers
 {
@@ -15,11 +16,13 @@ namespace MarbookApi.Controllers
     public class FollowsController(
         AppDbContext dbContext,
         INotificationService notificationService,
-        ILogger<FollowsController> logger) : ControllerBase
+        ILogger<FollowsController> logger,
+        HybridCache cache) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
         private readonly INotificationService _notificationService = notificationService;
         private readonly ILogger _logger = logger;
+        private readonly HybridCache _cache = cache;
 
         [HttpPost("follow")]
         public async Task<IActionResult> Follow(int userId)
@@ -56,6 +59,10 @@ namespace MarbookApi.Controllers
             _dbContext.Follows.Add(follow);
             await _dbContext.SaveChangesAsync();
 
+            // Invalidate cached profiles for both users (follower and followee counts updated)
+            await _cache.RemoveByTagAsync($"user-{userId}");
+            await _cache.RemoveByTagAsync($"user-{followerId}");
+
             if (followerId != userId)
             {
                 await _notificationService.CreateNotificationAsync(
@@ -88,6 +95,10 @@ namespace MarbookApi.Controllers
 
             _dbContext.Follows.Remove(follow);
             await _dbContext.SaveChangesAsync();
+
+            // Invalidate cached profiles for both users (follower and followee counts updated)
+            await _cache.RemoveByTagAsync($"user-{userId}");
+            await _cache.RemoveByTagAsync($"user-{followerId}");
 
             if (followerId != userId)
             {

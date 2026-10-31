@@ -5,14 +5,16 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using Microsoft.Extensions.Caching.Hybrid;
 
 namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class UsersController(AppDbContext dbContext) : ControllerBase
+    public class UsersController(AppDbContext dbContext, HybridCache cache) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
+        private readonly HybridCache _cache = cache;
 
         [HttpGet("me")]
         [Authorize]
@@ -20,26 +22,38 @@ namespace MarbookApi.Controllers
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            var user = await _dbContext.Users.FindAsync(userId);
-            if (user == null)
+            var dto = await _cache.GetOrCreateAsync(
+                $"user:{userId}",
+                async cancel =>
+                {
+                    var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancel);
+                    if (user == null)
+                    {
+                        return null;
+                    }
+
+                    return new UserResponseDto
+                    {
+                        Id = user.Id,
+                        Name = user.Name,
+                        Username = user.Username,
+                        Email = user.Email,
+                        Bio = user.Bio,
+                        AvatarUrl = user.AvatarUrl,
+                        CoverUrl = user.CoverUrl,
+                        IsEmailVerified = user.IsEmailVerified,
+                        Birthdate = user.Birthdate,
+                        CreatedAt = user.CreatedAt,
+                        UpdatedAt = user.UpdatedAt
+                    };
+                },
+                tags: [$"user-{userId}"],
+                cancellationToken: HttpContext.RequestAborted);
+
+            if (dto == null)
             {
                 return NotFound();
             }
-
-            var dto = new UserResponseDto
-            {
-                Id = user.Id,
-                Name = user.Name,
-                Username = user.Username,
-                Email = user.Email,
-                Bio = user.Bio,
-                AvatarUrl = user.AvatarUrl,
-                CoverUrl = user.CoverUrl,
-                IsEmailVerified = user.IsEmailVerified,
-                Birthdate = user.Birthdate,
-                CreatedAt = user.CreatedAt,
-                UpdatedAt = user.UpdatedAt
-            };
 
             return Ok(dto);
         }
@@ -78,6 +92,9 @@ namespace MarbookApi.Controllers
 
             await _dbContext.SaveChangesAsync();
 
+            // Invalidate all cached data for this user (profile, user DTO, etc.)
+            await _cache.RemoveByTagAsync($"user-{userId}");
+
             var result = await BuildUserProfileDto(user, userId);
             return Ok(result);
         }
@@ -85,8 +102,39 @@ namespace MarbookApi.Controllers
         [HttpGet("{id:int}/profile")]
         public async Task<ActionResult<UserProfileDto>> GetUserProfile(int id)
         {
-            var user = await _dbContext.Users.FindAsync(id);
-            if (user == null)
+            var profileData = await _cache.GetOrCreateAsync(
+                $"user:profile:{id}",
+                async cancel =>
+                {
+                    var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id, cancel);
+                    if (user == null)
+                    {
+                        return null;
+                    }
+
+                    var followersCount = await _dbContext.Follows.CountAsync(f => f.FolloweeId == user.Id, cancel);
+                    var followingCount = await _dbContext.Follows.CountAsync(f => f.FollowerId == user.Id, cancel);
+                    var postsCount = await _dbContext.Posts.CountAsync(p => p.UserId == user.Id, cancel);
+
+                    return new CachedUserProfileData(
+                        user.Id,
+                        user.Name,
+                        user.Username,
+                        user.Email,
+                        user.Bio,
+                        user.AvatarUrl,
+                        user.CoverUrl,
+                        user.Birthdate,
+                        user.CreatedAt,
+                        followersCount,
+                        followingCount,
+                        postsCount
+                    );
+                },
+                tags: [$"user-{id}"],
+                cancellationToken: HttpContext.RequestAborted);
+
+            if (profileData == null)
             {
                 return NotFound("User not found.");
             }
@@ -96,7 +144,27 @@ namespace MarbookApi.Controllers
                 ? uid
                 : null;
 
-            var profile = await BuildUserProfileDto(user, currentUserId);
+            var isFollowing = currentUserId.HasValue && currentUserId.Value != id
+                && await _dbContext.Follows.AnyAsync(f => f.FollowerId == currentUserId.Value && f.FolloweeId == id);
+
+            var profile = new UserProfileDto
+            {
+                Id = profileData.Id,
+                Name = profileData.Name,
+                Username = profileData.Username,
+                Email = profileData.Email,
+                Bio = profileData.Bio,
+                AvatarUrl = profileData.AvatarUrl,
+                CoverUrl = profileData.CoverUrl,
+                Birthdate = profileData.Birthdate,
+                CreatedAt = profileData.CreatedAt,
+                FollowersCount = profileData.FollowersCount,
+                FollowingCount = profileData.FollowingCount,
+                PostsCount = profileData.PostsCount,
+                IsFollowing = isFollowing,
+                IsMe = currentUserId.HasValue && currentUserId.Value == id
+            };
+
             return Ok(profile);
         }
 
@@ -109,13 +177,7 @@ namespace MarbookApi.Controllers
                 return NotFound("User not found.");
             }
 
-            int? currentUserId = User.Identity?.IsAuthenticated == true &&
-                int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid)
-                ? uid
-                : null;
-
-            var profile = await BuildUserProfileDto(user, currentUserId);
-            return Ok(profile);
+            return await GetUserProfile(user.Id);
         }
 
         [HttpGet]
@@ -197,27 +259,40 @@ namespace MarbookApi.Controllers
         [HttpGet("{id:int}")]
         public async Task<ActionResult<UserResponseDto>> GetUser(int id)
         {
-            var user = await _dbContext.Users.FindAsync(id);
+            var response = await _cache.GetOrCreateAsync(
+                $"user:{id}",
+                async cancel =>
+                {
+                    var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id, cancel);
 
-            if (user == null)
+                    if (user == null)
+                    {
+                        return null;
+                    }
+
+                    return new UserResponseDto
+                    {
+                        Id = user.Id,
+                        Name = user.Name,
+                        Username = user.Username,
+                        Email = user.Email,
+                        Bio = user.Bio,
+                        AvatarUrl = user.AvatarUrl,
+                        CoverUrl = user.CoverUrl,
+                        IsEmailVerified = user.IsEmailVerified,
+                        Birthdate = user.Birthdate,
+                        CreatedAt = user.CreatedAt,
+                        UpdatedAt = user.UpdatedAt
+                    };
+                },
+                tags: [$"user-{id}"],
+                cancellationToken: HttpContext.RequestAborted);
+
+            if (response == null)
             {
                 return NotFound();
             }
 
-            var response = new UserResponseDto
-            {
-                Id = user.Id,
-                Name = user.Name,
-                Username = user.Username,
-                Email = user.Email,
-                Bio = user.Bio,
-                AvatarUrl = user.AvatarUrl,
-                CoverUrl = user.CoverUrl,
-                IsEmailVerified = user.IsEmailVerified,
-                Birthdate = user.Birthdate,
-                CreatedAt = user.CreatedAt,
-                UpdatedAt = user.UpdatedAt
-            };
             return Ok(response);
         }
 
@@ -276,6 +351,9 @@ namespace MarbookApi.Controllers
 
             await _dbContext.SaveChangesAsync();
 
+            // Invalidate all cached data for this user
+            await _cache.RemoveByTagAsync($"user-{id}");
+
             return Ok(user);
         }
 
@@ -290,6 +368,9 @@ namespace MarbookApi.Controllers
 
             _dbContext.Users.Remove(user);
             await _dbContext.SaveChangesAsync();
+
+            // Invalidate all cached data for this user
+            await _cache.RemoveByTagAsync($"user-{id}");
 
             return NoContent();
         }

@@ -6,16 +6,18 @@ using MarbookApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
 
 namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/posts/{postId:int}/[controller]")]
     [Authorize]
-    public class LikesController(AppDbContext dbContext, INotificationService notificationService) : ControllerBase
+    public class LikesController(AppDbContext dbContext, INotificationService notificationService, HybridCache cache) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
         private readonly INotificationService _notificationService = notificationService;
+        private readonly HybridCache _cache = cache;
 
         [HttpPost]
         public async Task<ActionResult<Like>> CreateLike(int postId)
@@ -51,6 +53,9 @@ namespace MarbookApi.Controllers
             _dbContext.Likes.Add(like);
             await _dbContext.SaveChangesAsync();
 
+            // Invalidate post cache so likes count updates
+            await _cache.RemoveByTagAsync($"post-{postId}");
+
             await _notificationService.CreateNotificationAsync(
                 post.UserId,
                 userId,
@@ -76,6 +81,9 @@ namespace MarbookApi.Controllers
 
             _dbContext.Likes.Remove(like);
             await _dbContext.SaveChangesAsync();
+
+            // Invalidate post cache so likes count updates
+            await _cache.RemoveByTagAsync($"post-{postId}");
 
             if (post != null)
             {
