@@ -6,16 +6,18 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
 
 namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
     [Authorize]
-    public class PostsController(AppDbContext dbContext, ILogger<PostsController> logger) : ControllerBase
+    public class PostsController(AppDbContext dbContext, ILogger<PostsController> logger, HybridCache cache) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
         private readonly ILogger _logger = logger;
+        private readonly HybridCache _cache = cache;
 
         [HttpGet]
         [AllowAnonymous]
@@ -196,12 +198,38 @@ namespace MarbookApi.Controllers
                 ? uid
                 : null;
 
-            var post = await _dbContext.Posts
-                .Include(p => p.User)
-                .Include(p => p.Likes)
-                .Include(p => p.Comments)
-                .Include(p => p.Images)
-                .FirstOrDefaultAsync(p => p.Id == id);
+            var post = await _cache.GetOrCreateAsync(
+                $"post:{id}",
+                async cancel =>
+                {
+                    var p = await _dbContext.Posts
+                        .Include(x => x.User)
+                        .Include(x => x.Likes)
+                        .Include(x => x.Comments)
+                        .Include(x => x.Images)
+                        .FirstOrDefaultAsync(x => x.Id == id, cancel);
+
+                    if (p == null)
+                    {
+                        return null;
+                    }
+
+                    return new CachedPostData(
+                        p.Id,
+                        p.Content,
+                        p.Visibility,
+                        p.UserId,
+                        p.User.Name,
+                        p.User.AvatarUrl,
+                        p.CreatedAt,
+                        p.UpdatedAt,
+                        p.Likes.Count,
+                        p.Comments.Count,
+                        p.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList()
+                    );
+                },
+                tags: [$"post-{id}"],
+                cancellationToken: HttpContext.RequestAborted);
 
             if (post == null)
             {
@@ -235,20 +263,22 @@ namespace MarbookApi.Controllers
                 }
             }
 
+            var isLiked = currentUserId.HasValue && await _dbContext.Likes.AnyAsync(l => l.PostId == id && l.UserId == currentUserId.Value);
+
             var responseDto = new PostResponseDto
             {
                 Id = post.Id,
                 Content = post.Content,
                 Visibility = post.Visibility,
-                UserName = post.User.Name,
-                UserAvatarUrl = post.User.AvatarUrl,
+                UserName = post.UserName,
+                UserAvatarUrl = post.UserAvatarUrl,
                 CreatedAt = post.CreatedAt,
                 UpdatedAt = post.UpdatedAt,
                 UserId = post.UserId,
-                LikesCount = post.Likes.Count,
-                CommentsCount = post.Comments.Count,
-                IsLiked = currentUserId.HasValue && post.Likes.Any(l => l.UserId == currentUserId.Value),
-                ImageUrls = post.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList()
+                LikesCount = post.LikesCount,
+                CommentsCount = post.CommentsCount,
+                IsLiked = isLiked,
+                ImageUrls = post.ImageUrls
             };
 
             return Ok(responseDto);
@@ -302,6 +332,9 @@ namespace MarbookApi.Controllers
 
             _dbContext.Posts.Add(post);
             await _dbContext.SaveChangesAsync();
+
+            // Invalidate user profile cache (posts count changed)
+            await _cache.RemoveByTagAsync($"user-{userId}");
 
             _logger.LogInformation("Post {PostId} created successfully by user {UserId}.", post.Id, userId);
 
@@ -383,6 +416,9 @@ namespace MarbookApi.Controllers
 
             await _dbContext.SaveChangesAsync();
 
+            // Invalidate post cache
+            await _cache.RemoveByTagAsync($"post-{id}");
+
             _logger.LogInformation("Post {PostId} updated successfully by user {UserId}", post.Id, userId);
 
             var likesCount = await _dbContext.Likes.CountAsync(l => l.PostId == id);
@@ -425,6 +461,10 @@ namespace MarbookApi.Controllers
 
             _dbContext.Posts.Remove(post);
             await _dbContext.SaveChangesAsync();
+
+            // Invalidate both post cache and user profile cache (posts count changed)
+            await _cache.RemoveByTagAsync($"post-{id}");
+            await _cache.RemoveByTagAsync($"user-{userId}");
 
             return NoContent();
         }

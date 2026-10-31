@@ -6,16 +6,18 @@ using MarbookApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
 
 namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/posts/{postId:int}/[controller]")]
     [Authorize]
-    public class CommentsController(AppDbContext dbContext, INotificationService notificationService) : ControllerBase
+    public class CommentsController(AppDbContext dbContext, INotificationService notificationService, HybridCache cache) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
         private readonly INotificationService _notificationService = notificationService;
+        private readonly HybridCache _cache = cache;
 
         [HttpGet]
         [AllowAnonymous]
@@ -106,6 +108,9 @@ namespace MarbookApi.Controllers
 
             _dbContext.Comments.Add(comment);
             await _dbContext.SaveChangesAsync();
+
+            // Invalidate post cache so comments count updates
+            await _cache.RemoveByTagAsync($"post-{postId}");
 
             await _notificationService.CreateNotificationAsync(
                 post.UserId,
@@ -224,6 +229,9 @@ namespace MarbookApi.Controllers
 
             _dbContext.Comments.Add(reply);
             await _dbContext.SaveChangesAsync();
+
+            // Invalidate post cache so comments count updates
+            await _cache.RemoveByTagAsync($"post-{parentComment.PostId}");
 
             await _notificationService.CreateNotificationAsync(
                 parentComment.UserId,
@@ -374,6 +382,9 @@ namespace MarbookApi.Controllers
 
             _dbContext.Comments.Remove(comment);
             await _dbContext.SaveChangesAsync();
+
+            // Invalidate post cache so comments count updates
+            await _cache.RemoveByTagAsync($"post-{comment.PostId}");
 
             return NoContent();
         }

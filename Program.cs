@@ -12,6 +12,7 @@ using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
+using Microsoft.Extensions.Caching.Hybrid;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -190,6 +191,29 @@ builder.Services.AddHttpClient<IBrevoEmailSender, BrevoEmailSender>(client =>
 {
     client.BaseAddress = new Uri("https://api.brevo.com/");
 });
+
+// Redis Distributed Caching (L2 Cache - Optional/Pluggable)
+var redisConnectionString = builder.Configuration.GetConnectionString("Redis");
+if (!string.IsNullOrWhiteSpace(redisConnectionString))
+{
+    builder.Services.AddStackExchangeRedisCache(options =>
+    {
+        options.Configuration = redisConnectionString;
+        options.InstanceName = "Marbook:";
+    });
+}
+
+// HybridCache (.NET 10 L1 Memory + Optional L2 Distributed Cache with Stampede Protection)
+#pragma warning disable EXTEXP0018
+builder.Services.AddHybridCache(options =>
+{
+    options.DefaultEntryOptions = new HybridCacheEntryOptions
+    {
+        Expiration = TimeSpan.FromMinutes(5),
+        LocalCacheExpiration = TimeSpan.FromMinutes(2)
+    };
+});
+#pragma warning restore EXTEXP0018
 
 var app = builder.Build();
 
