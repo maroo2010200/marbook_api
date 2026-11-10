@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
 using MarbookApi.Hubs;
@@ -85,7 +85,8 @@ public class ConversationsController(
                     AvatarUrl = otherParticipant?.User.AvatarUrl
                 },
                 LastMessage = lastMsgDto,
-                UnreadCount = unreadCount
+                UnreadCount = unreadCount,
+                OtherParticipantLastReadAt = otherParticipant?.LastReadAt
             });
         }
 
@@ -529,7 +530,8 @@ public class ConversationsController(
                     AvatarUrl = sender?.AvatarUrl
                 },
                 LastMessage = recipientMessageDto,
-                UnreadCount = unreadCount
+                UnreadCount = unreadCount,
+                OtherParticipantLastReadAt = senderParticipant?.LastReadAt
             };
 
             await _hubContext.Clients.User(other.UserId.ToString()).SendAsync("ConversationUpdated", summary);
@@ -582,7 +584,8 @@ public class ConversationsController(
                 AvatarUrl = otherParticipant?.User.AvatarUrl
             },
             LastMessage = lastMsgDto,
-            UnreadCount = unreadCount
+            UnreadCount = unreadCount,
+            OtherParticipantLastReadAt = otherParticipant?.LastReadAt
         };
     }
 }
