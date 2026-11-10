@@ -28,15 +28,15 @@ public class BrevoEmailSender : IBrevoEmailSender
         {
             sender = new
             {
-                name = "Marbook",
+                name = "Marshmallow",
                 email = "maroo30303030@gmail.com"
             },
             to = new[]
             {
                 new { email = email, name = "Marwan" }
             },
-            subject = "Verify your email on Marbook",
-            htmlContent = $@"<h1>Welcome to Marbook!</h1>
+            subject = "Verify your email on Marshmallow",
+            htmlContent = $@"<h1>Welcome to Marshmallow!</h1>
                              <p>Thanks for joining. Please verify your email to activate your account.</p>
                              <a href='{frontendVerificationUrl}'>
                                Click here to verify

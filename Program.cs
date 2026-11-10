@@ -199,7 +199,7 @@ if (!string.IsNullOrWhiteSpace(redisConnectionString))
     builder.Services.AddStackExchangeRedisCache(options =>
     {
         options.Configuration = redisConnectionString;
-        options.InstanceName = "Marbook:";
+        options.InstanceName = "Marshmallow:";
     });
 }
 
