@@ -1,0 +1,10 @@
+**/.git
+**/.vs
+**/bin
+**/obj
+**/.vscode
+.idea
+wwwroot/uploads
+Dockerfile
+.dockerignore
+
