@@ -92,7 +92,7 @@ public class CloudinaryFileStorageService : IFileStorageService
         }
 
         var publicId = $"{Guid.NewGuid():N}";
-        var folderPath = $"marbook/{sanitizedFolder}";
+        var folderPath = $"marshmallow/{sanitizedFolder}";
 
         var uploadParams = new ImageUploadParams
         {
