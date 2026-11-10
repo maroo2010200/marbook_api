@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace MarbookApi.DTOs;
 
@@ -30,6 +30,7 @@ public class ConversationSummaryDto
     public UserSearchDto OtherParticipant { get; set; } = null!;
     public MessageDto? LastMessage { get; set; }
     public int UnreadCount { get; set; }
+    public DateTime? OtherParticipantLastReadAt { get; set; }
 }
 
 public class SendMessageDto
