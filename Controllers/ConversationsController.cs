@@ -39,55 +39,11 @@ public class ConversationsController(
             .OrderByDescending(c => c.UpdatedAt)
             .ToListAsync();
 
-        var result = new List<ConversationSummaryDto>();
+        var result = new List<ConversationSummaryDto>(conversations.Count);
 
         foreach (var conv in conversations)
         {
-            var myParticipant = conv.Participants.FirstOrDefault(p => p.UserId == userId);
-            var otherParticipant = conv.Participants.FirstOrDefault(p => p.UserId != userId)
-                                   ?? myParticipant;
-
-            var lastMsg = conv.Messages.FirstOrDefault();
-            MessageDto? lastMsgDto = null;
-            if (lastMsg != null)
-            {
-                lastMsgDto = new MessageDto
-                {
-                    Id = lastMsg.Id,
-                    ConversationId = conv.Id,
-                    SenderUserId = lastMsg.SenderUserId,
-                    SenderName = lastMsg.SenderUser?.Name ?? string.Empty,
-                    SenderAvatarUrl = lastMsg.SenderUser?.AvatarUrl,
-                    Content = lastMsg.IsDeleted ? "This message was deleted" : lastMsg.Content,
-                    CreatedAt = lastMsg.CreatedAt,
-                    UpdatedAt = lastMsg.UpdatedAt,
-                    IsDeleted = lastMsg.IsDeleted,
-                    IsMine = lastMsg.SenderUserId == userId
-                };
-            }
-
-            var lastRead = myParticipant?.LastReadAt;
-            var unreadCount = await _dbContext.Messages
-                .CountAsync(m => m.ConversationId == conv.Id &&
-                                 m.SenderUserId != userId &&
-                                 !m.IsDeleted &&
-                                 (lastRead == null || m.CreatedAt > lastRead));
-
-            result.Add(new ConversationSummaryDto
-            {
-                Id = conv.Id,
-                UpdatedAt = conv.UpdatedAt,
-                OtherParticipant = new UserSearchDto
-                {
-                    Id = otherParticipant?.User.Id ?? 0,
-                    Name = otherParticipant?.User.Name ?? "Unknown",
-                    Username = otherParticipant?.User.Username,
-                    AvatarUrl = otherParticipant?.User.AvatarUrl
-                },
-                LastMessage = lastMsgDto,
-                UnreadCount = unreadCount,
-                OtherParticipantLastReadAt = otherParticipant?.LastReadAt
-            });
+            result.Add(await BuildSummaryDtoAsync(conv, userId));
         }
 
         return Ok(result);
@@ -107,11 +63,7 @@ public class ConversationsController(
 
         foreach (var p in userParticipants)
         {
-            var count = await _dbContext.Messages
-                .CountAsync(m => m.ConversationId == p.ConversationId &&
-                                 m.SenderUserId != userId &&
-                                 !m.IsDeleted &&
-                                 (p.LastReadAt == null || m.CreatedAt > p.LastReadAt));
+            var count = await GetUnreadCountAsync(p.ConversationId, userId, p.LastReadAt);
 
             if (count > 0)
             {
@@ -245,19 +197,7 @@ public class ConversationsController(
 
         rawMessages.Reverse();
 
-        var items = rawMessages.Select(m => new MessageDto
-        {
-            Id = m.Id,
-            ConversationId = m.ConversationId,
-            SenderUserId = m.SenderUserId,
-            SenderName = m.SenderUser?.Name ?? string.Empty,
-            SenderAvatarUrl = m.SenderUser?.AvatarUrl,
-            Content = m.IsDeleted ? "This message was deleted" : m.Content,
-            CreatedAt = m.CreatedAt,
-            UpdatedAt = m.UpdatedAt,
-            IsDeleted = m.IsDeleted,
-            IsMine = m.SenderUserId == currentUserId
-        }).ToList();
+        var items = rawMessages.Select(m => MapToDto(m, currentUserId)).ToList();
 
         return Ok(new PagedResult<MessageDto>
         {
@@ -333,28 +273,8 @@ public class ConversationsController(
 
         await _dbContext.SaveChangesAsync();
 
-        var messageDto = new MessageDto
-        {
-            Id = message.Id,
-            ConversationId = message.ConversationId,
-            SenderUserId = message.SenderUserId,
-            SenderName = message.SenderUser?.Name ?? string.Empty,
-            SenderAvatarUrl = message.SenderUser?.AvatarUrl,
-            Content = message.Content,
-            CreatedAt = message.CreatedAt,
-            UpdatedAt = message.UpdatedAt,
-            IsDeleted = false,
-            IsMine = true
-        };
-
-        var groupName = ChatHub.GetConversationGroupName(id);
-        await _hubContext.Clients.Group(groupName).SendAsync("MessageEdited", messageDto);
-
-        var participantUserIds = await _dbContext.ConversationParticipants
-            .Where(cp => cp.ConversationId == id)
-            .Select(cp => cp.UserId.ToString())
-            .ToListAsync();
-        await _hubContext.Clients.Users(participantUserIds).SendAsync("MessageEdited", messageDto);
+        var messageDto = MapToDto(message, currentUserId);
+        await BroadcastToConversationAsync(id, "MessageEdited", messageDto);
 
         return Ok(messageDto);
     }
@@ -375,20 +295,13 @@ public class ConversationsController(
         participant.LastReadAt = DateTime.UtcNow;
         await _dbContext.SaveChangesAsync();
 
-        var groupName = ChatHub.GetConversationGroupName(id);
         var readPayload = new
         {
             ConversationId = id,
             ReaderUserId = currentUserId,
             ReadAt = participant.LastReadAt
         };
-        await _hubContext.Clients.Group(groupName).SendAsync("MessagesRead", readPayload);
-
-        var participantUserIds = await _dbContext.ConversationParticipants
-            .Where(cp => cp.ConversationId == id)
-            .Select(cp => cp.UserId.ToString())
-            .ToListAsync();
-        await _hubContext.Clients.Users(participantUserIds).SendAsync("MessagesRead", readPayload);
+        await BroadcastToConversationAsync(id, "MessagesRead", readPayload);
 
         return NoContent();
     }
@@ -423,7 +336,6 @@ public class ConversationsController(
 
         await _dbContext.SaveChangesAsync();
 
-        var groupName = ChatHub.GetConversationGroupName(id);
         var deletePayload = new
         {
             ConversationId = id,
@@ -432,13 +344,7 @@ public class ConversationsController(
             IsDeleted = true,
             UpdatedAt = now
         };
-        await _hubContext.Clients.Group(groupName).SendAsync("MessageDeleted", deletePayload);
-
-        var participantUserIds = await _dbContext.ConversationParticipants
-            .Where(cp => cp.ConversationId == id)
-            .Select(cp => cp.UserId.ToString())
-            .ToListAsync();
-        await _hubContext.Clients.Users(participantUserIds).SendAsync("MessageDeleted", deletePayload);
+        await BroadcastToConversationAsync(id, "MessageDeleted", deletePayload);
 
         return NoContent();
     }
@@ -470,33 +376,8 @@ public class ConversationsController(
 
         var sender = await _dbContext.Users.FindAsync(senderUserId);
 
-        var senderMessageDto = new MessageDto
-        {
-            Id = message.Id,
-            ConversationId = conversation.Id,
-            SenderUserId = senderUserId,
-            SenderName = sender?.Name ?? string.Empty,
-            SenderAvatarUrl = sender?.AvatarUrl,
-            Content = message.Content,
-            CreatedAt = message.CreatedAt,
-            UpdatedAt = null,
-            IsDeleted = false,
-            IsMine = true
-        };
-
-        var recipientMessageDto = new MessageDto
-        {
-            Id = message.Id,
-            ConversationId = conversation.Id,
-            SenderUserId = senderUserId,
-            SenderName = sender?.Name ?? string.Empty,
-            SenderAvatarUrl = sender?.AvatarUrl,
-            Content = message.Content,
-            CreatedAt = message.CreatedAt,
-            UpdatedAt = null,
-            IsDeleted = false,
-            IsMine = false
-        };
+        var senderMessageDto = MapToDto(message, currentUserId: senderUserId, sender);
+        var recipientMessageDto = MapToDto(message, currentUserId: -1, sender);
 
         var groupName = ChatHub.GetConversationGroupName(conversation.Id);
 
@@ -512,23 +393,13 @@ public class ConversationsController(
         {
             await _hubContext.Clients.User(other.UserId.ToString()).SendAsync("ReceiveMessage", recipientMessageDto);
 
-            var unreadCount = await _dbContext.Messages
-                .CountAsync(m => m.ConversationId == conversation.Id &&
-                                 m.SenderUserId != other.UserId &&
-                                 !m.IsDeleted &&
-                                 (other.LastReadAt == null || m.CreatedAt > other.LastReadAt));
+            var unreadCount = await GetUnreadCountAsync(conversation.Id, other.UserId, other.LastReadAt);
 
             var summary = new ConversationSummaryDto
             {
                 Id = conversation.Id,
                 UpdatedAt = conversation.UpdatedAt,
-                OtherParticipant = new UserSearchDto
-                {
-                    Id = sender?.Id ?? senderUserId,
-                    Name = sender?.Name ?? string.Empty,
-                    Username = sender?.Username,
-                    AvatarUrl = sender?.AvatarUrl
-                },
+                OtherParticipant = MapToUserSearchDto(sender),
                 LastMessage = recipientMessageDto,
                 UnreadCount = unreadCount,
                 OtherParticipantLastReadAt = senderParticipant?.LastReadAt
@@ -547,45 +418,63 @@ public class ConversationsController(
                                ?? myParticipant;
 
         var lastMsg = conversation.Messages.FirstOrDefault();
-        MessageDto? lastMsgDto = null;
-        if (lastMsg != null)
-        {
-            lastMsgDto = new MessageDto
-            {
-                Id = lastMsg.Id,
-                ConversationId = conversation.Id,
-                SenderUserId = lastMsg.SenderUserId,
-                SenderName = lastMsg.SenderUser?.Name ?? string.Empty,
-                SenderAvatarUrl = lastMsg.SenderUser?.AvatarUrl,
-                Content = lastMsg.IsDeleted ? "This message was deleted" : lastMsg.Content,
-                CreatedAt = lastMsg.CreatedAt,
-                UpdatedAt = lastMsg.UpdatedAt,
-                IsDeleted = lastMsg.IsDeleted,
-                IsMine = lastMsg.SenderUserId == currentUserId
-            };
-        }
-
-        var lastRead = myParticipant?.LastReadAt;
-        var unreadCount = await _dbContext.Messages
-            .CountAsync(m => m.ConversationId == conversation.Id &&
-                             m.SenderUserId != currentUserId &&
-                             !m.IsDeleted &&
-                             (lastRead == null || m.CreatedAt > lastRead));
+        var lastMsgDto = lastMsg != null ? MapToDto(lastMsg, currentUserId) : null;
+        var unreadCount = await GetUnreadCountAsync(conversation.Id, currentUserId, myParticipant?.LastReadAt);
 
         return new ConversationSummaryDto
         {
             Id = conversation.Id,
             UpdatedAt = conversation.UpdatedAt,
-            OtherParticipant = new UserSearchDto
-            {
-                Id = otherParticipant?.User.Id ?? 0,
-                Name = otherParticipant?.User.Name ?? "Unknown",
-                Username = otherParticipant?.User.Username,
-                AvatarUrl = otherParticipant?.User.AvatarUrl
-            },
+            OtherParticipant = MapToUserSearchDto(otherParticipant?.User),
             LastMessage = lastMsgDto,
             UnreadCount = unreadCount,
             OtherParticipantLastReadAt = otherParticipant?.LastReadAt
         };
+    }
+    private static MessageDto MapToDto(Message message, int currentUserId, User? senderUser = null)
+    {
+        var sender = senderUser ?? message.SenderUser;
+        return new MessageDto
+        {
+            Id = message.Id,
+            ConversationId = message.ConversationId,
+            SenderUserId = message.SenderUserId,
+            SenderName = sender?.Name ?? string.Empty,
+            SenderAvatarUrl = sender?.AvatarUrl,
+            Content = message.IsDeleted ? "This message was deleted" : message.Content,
+            CreatedAt = message.CreatedAt,
+            UpdatedAt = message.UpdatedAt,
+            IsDeleted = message.IsDeleted,
+            IsMine = message.SenderUserId == currentUserId
+        };
+    }
+
+    private static UserSearchDto MapToUserSearchDto(User? user) => new()
+    {
+        Id = user?.Id ?? 0,
+        Name = user?.Name ?? "Unknown",
+        Username = user?.Username,
+        AvatarUrl = user?.AvatarUrl
+    };
+
+    private Task<int> GetUnreadCountAsync(int conversationId, int userId, DateTime? lastReadAt)
+    {
+        return _dbContext.Messages.CountAsync(m =>
+            m.ConversationId == conversationId &&
+            m.SenderUserId != userId &&
+            !m.IsDeleted &&
+            (lastReadAt == null || m.CreatedAt > lastReadAt));
+    }
+
+    private async Task BroadcastToConversationAsync(int conversationId, string method, object payload)
+    {
+        var groupName = ChatHub.GetConversationGroupName(conversationId);
+        await _hubContext.Clients.Group(groupName).SendAsync(method, payload);
+
+        var participantUserIds = await _dbContext.ConversationParticipants
+            .Where(cp => cp.ConversationId == conversationId)
+            .Select(cp => cp.UserId.ToString())
+            .ToListAsync();
+        await _hubContext.Clients.Users(participantUserIds).SendAsync(method, payload);
     }
 }

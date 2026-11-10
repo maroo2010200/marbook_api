@@ -1,4 +1,5 @@
-using System.Security.Claims;
+using System.Linq.Expressions;
+﻿using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
 using MarbookApi.Models;
@@ -39,21 +40,7 @@ namespace MarbookApi.Controllers
             var comments = await query
                 .Skip(skip)
                 .Take(pagination.PageSize)
-                .Select(c => new CommentResponseDto
-                {
-                    Id = c.Id,
-                    Content = c.Content,
-                    ImageUrl = c.ImageUrl,
-                    UserName = c.User.Name,
-                    UserAvatarUrl = c.User.AvatarUrl,
-                    CreatedAt = c.CreatedAt,
-                    UpdatedAt = c.UpdatedAt,
-                    UserId = c.UserId,
-                    ParentCommentId = c.ParentCommentId,
-                    LikeCount = c.Likes.Count(),
-                    ReplyCount = 0,
-                    Liked = currentUserId.HasValue && c.Likes.Any(l => l.UserId == currentUserId.Value)
-                })
+                .Select(ProjectToDto(currentUserId))
                 .ToListAsync();
 
             if (comments.Count > 0)
@@ -119,21 +106,7 @@ namespace MarbookApi.Controllers
                 postId,
                 comment.Id);
 
-            var commentResponseDto = new CommentResponseDto
-            {
-                Id = comment.Id,
-                Content = comment.Content,
-                ImageUrl = comment.ImageUrl,
-                UserName = user.Name,
-                UserAvatarUrl = user.AvatarUrl,
-                CreatedAt = comment.CreatedAt,
-                UpdatedAt = comment.UpdatedAt,
-                UserId = comment.UserId,
-                ParentCommentId = null,
-                LikeCount = 0,
-                ReplyCount = 0,
-                Liked = false
-            };
+            var commentResponseDto = MapToDto(comment, user);
 
             return CreatedAtAction(nameof(GetComments), new { postId }, commentResponseDto);
         }
@@ -240,21 +213,7 @@ namespace MarbookApi.Controllers
                 parentComment.PostId,
                 reply.Id);
 
-            var response = new CommentResponseDto
-            {
-                Id = reply.Id,
-                Content = reply.Content,
-                ImageUrl = reply.ImageUrl,
-                UserName = user.Name,
-                UserAvatarUrl = user.AvatarUrl,
-                CreatedAt = reply.CreatedAt,
-                UpdatedAt = reply.UpdatedAt,
-                UserId = reply.UserId,
-                ParentCommentId = commentId,
-                LikeCount = 0,
-                ReplyCount = 0,
-                Liked = false
-            };
+            var response = MapToDto(reply, user);
 
             return Ok(response);
         }
@@ -271,21 +230,7 @@ namespace MarbookApi.Controllers
                 .Include(c => c.User)
                 .Where(c => c.ParentCommentId == commentId)
                 .OrderBy(c => c.CreatedAt)
-                .Select(c => new CommentResponseDto
-                {
-                    Id = c.Id,
-                    Content = c.Content,
-                    ImageUrl = c.ImageUrl,
-                    UserName = c.User.Name,
-                    UserAvatarUrl = c.User.AvatarUrl,
-                    CreatedAt = c.CreatedAt,
-                    UpdatedAt = c.UpdatedAt,
-                    UserId = c.UserId,
-                    ParentCommentId = c.ParentCommentId,
-                    LikeCount = c.Likes.Count(),
-                    ReplyCount = 0,
-                    Liked = currentUserId.HasValue && c.Likes.Any(l => l.UserId == currentUserId.Value)
-                })
+                .Select(ProjectToDto(currentUserId))
                 .ToListAsync();
 
             if (replies.Count > 0)
@@ -346,21 +291,7 @@ namespace MarbookApi.Controllers
 
             var replyCounts = await GetReplyCountsForPostAsync(comment.PostId);
 
-            var responseDto = new CommentResponseDto
-            {
-                Id = comment.Id,
-                Content = comment.Content,
-                ImageUrl = comment.ImageUrl,
-                UserName = comment.User.Name,
-                UserAvatarUrl = comment.User.AvatarUrl,
-                CreatedAt = comment.CreatedAt,
-                UpdatedAt = comment.UpdatedAt,
-                UserId = comment.UserId,
-                ParentCommentId = comment.ParentCommentId,
-                LikeCount = likeCount,
-                ReplyCount = replyCounts.GetValueOrDefault(comment.Id, 0),
-                Liked = isLiked
-            };
+            var responseDto = MapToDto(comment, comment.User, likeCount, replyCounts.GetValueOrDefault(comment.Id, 0), isLiked);
 
             return Ok(responseDto);
         }
@@ -428,5 +359,38 @@ namespace MarbookApi.Controllers
 
             return result;
         }
+        private static Expression<Func<Comment, CommentResponseDto>> ProjectToDto(int? currentUserId) => c => new CommentResponseDto
+        {
+            Id = c.Id,
+            Content = c.Content,
+            ImageUrl = c.ImageUrl,
+            UserName = c.User.Name,
+            UserUsername = c.User.Username,
+            UserAvatarUrl = c.User.AvatarUrl,
+            CreatedAt = c.CreatedAt,
+            UpdatedAt = c.UpdatedAt,
+            UserId = c.UserId,
+            ParentCommentId = c.ParentCommentId,
+            LikeCount = c.Likes.Count(),
+            ReplyCount = 0,
+            Liked = currentUserId.HasValue && c.Likes.Any(l => l.UserId == currentUserId.Value)
+        };
+
+        private static CommentResponseDto MapToDto(Comment comment, User user, int likeCount = 0, int replyCount = 0, bool isLiked = false) => new()
+        {
+            Id = comment.Id,
+            Content = comment.Content,
+            ImageUrl = comment.ImageUrl,
+            UserName = user.Name,
+            UserUsername = user.Username,
+            UserAvatarUrl = user.AvatarUrl,
+            CreatedAt = comment.CreatedAt,
+            UpdatedAt = comment.UpdatedAt,
+            UserId = comment.UserId,
+            ParentCommentId = comment.ParentCommentId,
+            LikeCount = likeCount,
+            ReplyCount = replyCount,
+            Liked = isLiked
+        };
     }
 }
