@@ -8,6 +8,7 @@ public class CommentResponseDto
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public string UserName { get; set; } = string.Empty;
+    public string? UserUsername { get; set; }
     public string? UserAvatarUrl { get; set; }
     public int UserId { get; set; }
     public int? ParentCommentId { get; set; }
