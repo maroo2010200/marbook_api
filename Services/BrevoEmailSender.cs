@@ -22,7 +22,8 @@ public class BrevoEmailSender : IBrevoEmailSender
 
         string encodedToken = WebUtility.UrlEncode(verificationToken);
 
-        string frontendVerificationUrl = $"http://localhost:5173/verify?token={encodedToken}";
+        var frontendBaseUrl = _configuration["Frontend:BaseUrl"]?.TrimEnd('/') ?? "http://localhost:5173";
+        string frontendVerificationUrl = $"{frontendBaseUrl}/verify?token={encodedToken}";
 
         var emailData = new
         {
