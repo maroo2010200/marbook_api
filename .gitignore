@@ -20,3 +20,8 @@ obj/
 
 # Uploaded media
 wwwroot/uploads/
+
+# Local project documentation
+BACKEND_EXPLAINED.md
+PROJECT_ROADMAP.md
+AGENTS.md
