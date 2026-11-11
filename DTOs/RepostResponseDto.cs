@@ -6,3 +6,4 @@ public class RepostResponseDto
     public int RepostsCount { get; set; }
     public PostResponseDto? Post { get; set; }
 }
+
