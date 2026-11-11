@@ -11,6 +11,7 @@ namespace MarbookApi.DTOs
         string? AvatarUrl,
         string? CoverUrl,
         DateOnly Birthdate,
+        bool IsBirthdatePrivate,
         DateTime CreatedAt,
         int FollowersCount,
         int FollowingCount,

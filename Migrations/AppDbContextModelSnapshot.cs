@@ -472,6 +472,11 @@ namespace MarbookApi.Migrations
                         .IsRequired()
                         .HasColumnType("citext");
 
+                    b.Property<bool>("IsBirthdatePrivate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("IsEmailVerified")
                         .HasColumnType("boolean");
 

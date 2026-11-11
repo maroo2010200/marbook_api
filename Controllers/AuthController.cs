@@ -126,6 +126,7 @@ public class AuthController(
                 Email = user.Email,
                 IsEmailVerified = user.IsEmailVerified,
                 Birthdate = user.Birthdate,
+                IsBirthdatePrivate = user.IsBirthdatePrivate,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             }
@@ -164,6 +165,7 @@ public class AuthController(
                 AvatarUrl = user.AvatarUrl,
                 CoverUrl = user.CoverUrl,
                 Birthdate = user.Birthdate,
+                IsBirthdatePrivate = user.IsBirthdatePrivate,
                 IsEmailVerified = user.IsEmailVerified,
                 CreatedAt = user.CreatedAt,
                 UpdatedAt = user.UpdatedAt

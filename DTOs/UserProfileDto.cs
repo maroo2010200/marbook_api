@@ -9,7 +9,8 @@ public class UserProfileDto
     public string? Bio { get; set; }
     public string? AvatarUrl { get; set; }
     public string? CoverUrl { get; set; }
-    public DateOnly Birthdate { get; set; }
+    public DateOnly? Birthdate { get; set; }
+    public bool IsBirthdatePrivate { get; set; }
     public DateTime CreatedAt { get; set; }
     public int FollowersCount { get; set; }
     public int FollowingCount { get; set; }

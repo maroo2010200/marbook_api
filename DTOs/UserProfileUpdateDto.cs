@@ -21,4 +21,5 @@ public class UserProfileUpdateDto
     public string? CoverUrl { get; set; }
 
     public DateOnly Birthdate { get; set; }
+    public bool? IsBirthdatePrivate { get; set; }
 }
