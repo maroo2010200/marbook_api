@@ -55,9 +55,10 @@ namespace MarbookApi.Controllers
                 query = query.Where(p => p.UserId == userId.Value);
             }
 
+            var followedUserIds = new List<int>();
             if (currentUserId.HasValue)
             {
-                var followedUserIds = await _dbContext.Follows
+                followedUserIds = await _dbContext.Follows
                     .Where(f => f.FollowerId == currentUserId.Value)
                     .Select(f => f.FolloweeId)
                     .ToListAsync();
@@ -149,6 +150,12 @@ namespace MarbookApi.Controllers
                 })
                 .ToListAsync();
 
+            var followedSet = followedUserIds.ToHashSet();
+            foreach (var post in posts)
+            {
+                post.OriginalPost = RedactOriginalPostIfRestricted(post.OriginalPost, currentUserId, followedSet);
+            }
+
             return Ok(new PagedResult<PostResponseDto>
             {
                 Items = posts,
@@ -180,9 +187,10 @@ namespace MarbookApi.Controllers
                     .ThenInclude(op => op!.Images)
                 .Where(p => EF.Functions.ToTsVector("english", p.Content).Matches(EF.Functions.WebSearchToTsQuery("english", search)));
 
+            var followedUserIds = new List<int>();
             if (currentUserId.HasValue)
             {
-                var followedUserIds = await _dbContext.Follows
+                followedUserIds = await _dbContext.Follows
                     .Where(f => f.FollowerId == currentUserId.Value)
                     .Select(f => f.FolloweeId)
                     .ToListAsync();
@@ -241,6 +249,12 @@ namespace MarbookApi.Controllers
                 .Skip(skip)
                 .Take(pagination.PageSize)
                 .ToListAsync();
+
+            var followedSet = followedUserIds.ToHashSet();
+            foreach (var post in posts)
+            {
+                post.OriginalPost = RedactOriginalPostIfRestricted(post.OriginalPost, currentUserId, followedSet);
+            }
 
             return Ok(new PagedResult<PostFtsResultDto>
             {
@@ -325,31 +339,15 @@ namespace MarbookApi.Controllers
                 return NotFound();
             }
 
-            if (post.Visibility != PostVisibility.Public)
+            if (!await CanViewPostAsync(post.Visibility, post.UserId, currentUserId))
             {
-                if (!currentUserId.HasValue)
-                {
-                    return NotFound();
-                }
+                return NotFound();
+            }
 
-                if (post.UserId != currentUserId.Value)
-                {
-                    if (post.Visibility == PostVisibility.Private)
-                    {
-                        return NotFound();
-                    }
-
-                    if (post.Visibility == PostVisibility.Followers)
-                    {
-                        var isFollower = await _dbContext.Follows
-                            .AnyAsync(f => f.FollowerId == currentUserId.Value && f.FolloweeId == post.UserId);
-
-                        if (!isFollower)
-                        {
-                            return NotFound();
-                        }
-                    }
-                }
+            var visibleOriginalPost = post.OriginalPost;
+            if (visibleOriginalPost != null && !await CanViewPostAsync(visibleOriginalPost.Visibility, visibleOriginalPost.UserId, currentUserId))
+            {
+                visibleOriginalPost = null;
             }
 
             var isLiked = currentUserId.HasValue && await _dbContext.Likes.AnyAsync(l => l.PostId == id && l.UserId == currentUserId.Value);
@@ -370,7 +368,7 @@ namespace MarbookApi.Controllers
                 IsLiked = isLiked,
                 ImageUrls = post.ImageUrls,
                 OriginalPostId = post.OriginalPostId,
-                OriginalPost = post.OriginalPost,
+                OriginalPost = visibleOriginalPost,
                 RepostsCount = post.RepostsCount,
                 IsReposted = isReposted,
                 IsPinned = post.IsPinned
@@ -421,25 +419,20 @@ namespace MarbookApi.Controllers
                     return NotFound("Original post not found.");
                 }
 
-                if (targetPost.Visibility == PostVisibility.Private && targetPost.UserId != userId)
+                if (!await CanViewPostAsync(targetPost.Visibility, targetPost.UserId, userId))
                 {
-                    return BadRequest("Private posts cannot be reposted.");
-                }
-
-                if (targetPost.Visibility == PostVisibility.Followers && targetPost.UserId != userId)
-                {
-                    var isFollower = await _dbContext.Follows
-                        .AnyAsync(f => f.FollowerId == userId && f.FolloweeId == targetPost.UserId);
-                    if (!isFollower)
-                    {
-                        return Forbid();
-                    }
+                    return Forbid();
                 }
 
                 rootPostId = targetPost.OriginalPostId ?? targetPost.Id;
                 originalPost = targetPost.OriginalPostId.HasValue && targetPost.OriginalPost != null
                     ? targetPost.OriginalPost
                     : targetPost;
+
+                if (originalPost.Visibility != PostVisibility.Public)
+                {
+                    return BadRequest("Only public posts can be reposted.");
+                }
             }
 
             var post = new Post
@@ -528,7 +521,7 @@ namespace MarbookApi.Controllers
                 IsPinned = post.IsPinned
             };
 
-            await _hubContext.Clients.All.SendAsync("PostCreated", responseDto);
+            await BroadcastPostCreatedAsync(responseDto);
 
             return CreatedAtAction(nameof(GetPost), new { id = post.Id }, responseDto);
         }
@@ -552,21 +545,6 @@ namespace MarbookApi.Controllers
                 return NotFound("Post not found.");
             }
 
-            if (targetPost.Visibility == PostVisibility.Private && targetPost.UserId != userId)
-            {
-                return BadRequest("Private posts cannot be reposted.");
-            }
-
-            if (targetPost.Visibility == PostVisibility.Followers && targetPost.UserId != userId)
-            {
-                var isFollower = await _dbContext.Follows
-                    .AnyAsync(f => f.FollowerId == userId && f.FolloweeId == targetPost.UserId);
-                if (!isFollower)
-                {
-                    return Forbid();
-                }
-            }
-
             var rootPostId = targetPost.OriginalPostId ?? targetPost.Id;
             var originalPost = targetPost.OriginalPostId.HasValue && targetPost.OriginalPost != null
                 ? targetPost.OriginalPost
@@ -577,7 +555,7 @@ namespace MarbookApi.Controllers
 
             if (existingRepost != null)
             {
-                // Un-repost
+                // Always allow un-reposting even if the original post was later restricted
                 _dbContext.Posts.Remove(existingRepost);
                 await _dbContext.SaveChangesAsync();
 
@@ -604,6 +582,16 @@ namespace MarbookApi.Controllers
                     RepostsCount = count,
                     Post = null
                 });
+            }
+
+            if (!await CanViewPostAsync(targetPost.Visibility, targetPost.UserId, userId))
+            {
+                return Forbid();
+            }
+
+            if (originalPost.Visibility != PostVisibility.Public)
+            {
+                return BadRequest("Only public posts can be reposted.");
             }
 
             var user = await _dbContext.Users.FindAsync(userId);
@@ -676,7 +664,7 @@ namespace MarbookApi.Controllers
                 IsPinned = repost.IsPinned
             };
 
-            await _hubContext.Clients.All.SendAsync("PostCreated", repostDto);
+            await BroadcastPostCreatedAsync(repostDto);
 
             return Ok(new RepostResponseDto
             {
@@ -745,8 +733,8 @@ namespace MarbookApi.Controllers
 
             await _dbContext.SaveChangesAsync();
 
-            // Invalidate post cache
-            await _cache.RemoveByTagAsync($"post-{id}");
+            // Invalidate post cache and any repost caches referencing this post
+            await InvalidatePostAndRepostsCacheAsync(id);
 
             _logger.LogInformation("Post {PostId} updated successfully by user {UserId}", post.Id, userId);
 
@@ -789,11 +777,20 @@ namespace MarbookApi.Controllers
                 return Forbid();
             }
 
+            var repostIds = await _dbContext.Posts
+                .Where(p => p.OriginalPostId == id)
+                .Select(p => p.Id)
+                .ToListAsync();
+
             _dbContext.Posts.Remove(post);
             await _dbContext.SaveChangesAsync();
 
-            // Invalidate both post cache and user profile cache (posts count changed)
+            // Invalidate post cache, any repost caches, and user profile cache (posts count changed)
             await _cache.RemoveByTagAsync($"post-{id}");
+            foreach (var repostId in repostIds)
+            {
+                await _cache.RemoveByTagAsync($"post-{repostId}");
+            }
             if (post.OriginalPostId.HasValue)
             {
                 await _cache.RemoveByTagAsync($"post-{post.OriginalPostId.Value}");
@@ -834,6 +831,98 @@ namespace MarbookApi.Controllers
 
             await _hubContext.Clients.All.SendAsync("PostPinned", new { postId = id, userId, isPinned = post.IsPinned });
             return Ok(new { postId = id, isPinned = post.IsPinned });
+        }
+
+        private async Task<bool> CanViewPostAsync(PostVisibility visibility, int authorUserId, int? currentUserId)
+        {
+            if (visibility == PostVisibility.Public)
+            {
+                return true;
+            }
+
+            if (!currentUserId.HasValue)
+            {
+                return false;
+            }
+
+            if (authorUserId == currentUserId.Value)
+            {
+                return true;
+            }
+
+            if (visibility == PostVisibility.Followers)
+            {
+                return await _dbContext.Follows
+                    .AnyAsync(f => f.FollowerId == currentUserId.Value && f.FolloweeId == authorUserId);
+            }
+
+            return false;
+        }
+
+        private static PostResponseDto? RedactOriginalPostIfRestricted(
+            PostResponseDto? originalPost,
+            int? currentUserId,
+            ISet<int> followedUserIds)
+        {
+            if (originalPost == null || originalPost.Visibility == PostVisibility.Public)
+            {
+                return originalPost;
+            }
+
+            if (!currentUserId.HasValue)
+            {
+                return null;
+            }
+
+            if (originalPost.UserId == currentUserId.Value)
+            {
+                return originalPost;
+            }
+
+            if (originalPost.Visibility == PostVisibility.Followers && followedUserIds.Contains(originalPost.UserId))
+            {
+                return originalPost;
+            }
+
+            return null;
+        }
+
+        private async Task BroadcastPostCreatedAsync(PostResponseDto dto)
+        {
+            if (dto.Visibility == PostVisibility.Public)
+            {
+                await _hubContext.Clients.All.SendAsync("PostCreated", dto);
+                return;
+            }
+
+            if (dto.Visibility == PostVisibility.Followers)
+            {
+                var recipientIds = await _dbContext.Follows
+                    .Where(f => f.FolloweeId == dto.UserId)
+                    .Select(f => f.FollowerId.ToString())
+                    .ToListAsync();
+                recipientIds.Add(dto.UserId.ToString());
+
+                await _hubContext.Clients.Users(recipientIds).SendAsync("PostCreated", dto);
+                return;
+            }
+
+            await _hubContext.Clients.User(dto.UserId.ToString()).SendAsync("PostCreated", dto);
+        }
+
+        private async Task InvalidatePostAndRepostsCacheAsync(int postId)
+        {
+            await _cache.RemoveByTagAsync($"post-{postId}");
+
+            var repostIds = await _dbContext.Posts
+                .Where(p => p.OriginalPostId == postId)
+                .Select(p => p.Id)
+                .ToListAsync();
+
+            foreach (var repostId in repostIds)
+            {
+                await _cache.RemoveByTagAsync($"post-{repostId}");
+            }
         }
     }
 }
