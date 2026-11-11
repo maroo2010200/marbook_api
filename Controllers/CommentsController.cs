@@ -243,7 +243,8 @@ namespace MarbookApi.Controllers
             var replies = await _dbContext.Comments
                 .Include(c => c.User)
                 .Where(c => c.ParentCommentId == commentId)
-                .OrderBy(c => c.CreatedAt)
+                .OrderByDescending(c => c.IsPinned)
+                .ThenBy(c => c.CreatedAt)
                 .Select(ProjectToDto(currentUserId))
                 .ToListAsync();
 
@@ -349,8 +350,8 @@ namespace MarbookApi.Controllers
             }
 
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            // Pinned by author only (Post author or comment author)
-            if (comment.Post.UserId != userId && comment.UserId != userId)
+            // Pinned by post author only
+            if (comment.Post.UserId != userId)
             {
                 return Forbid();
             }
