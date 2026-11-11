@@ -1,5 +1,6 @@
 using MarbookApi.Data;
 using MarbookApi.DTOs;
+using MarbookApi.Extensions;
 using MarbookApi.Models;
 using MarbookApi.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -87,9 +88,7 @@ public class AuthController(
 
         var (token, expiresAt) = _jwtService.GenerateToken(user);
 
-        _logger.LogInformation(
-            "User {UserId} registered successfully.", 
-            user.Id);
+        _logger.LogUserAction("UserRegistered", user.Id, user.Username, "User", user.Id, $"Email={user.Email}");
 
         return Ok(new AuthResponseDto
         {
@@ -106,27 +105,21 @@ public class AuthController(
 
         if (user == null || !BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
         {
-            _logger.LogWarning(
-                "Failed login attempt for email {Email}", 
-                dto.Email);
+            _logger.LogSecurityWarning("LoginFailed", user?.Id, user?.Username, "Auth", dto.Email, "Invalid credentials");
 
             return Unauthorized("Invalid email or password.");
         }
 
         if (!user.IsEmailVerified)
         {
-            _logger.LogWarning(
-                "Failed to verify email {Email}",
-                dto.Email);
+            _logger.LogSecurityWarning("LoginBlockedUnverified", user.Id, user.Username, "Auth", dto.Email, "Email not verified");
             
             return Unauthorized("Please verify your email.");
         }
 
         var (token, expiresAt) = _jwtService.GenerateToken(user);
 
-        _logger.LogInformation(
-            "User {UserId} logged in successfully.",
-            user.Id);
+        _logger.LogUserAction("UserLoggedIn", user.Id, user.Username, "Auth", user.Id);
 
         return Ok(new 
         {
@@ -154,6 +147,7 @@ public class AuthController(
 
         if (userId == null)
         {
+            _logger.LogSecurityWarning("EmailVerificationFailed", null, null, "Auth", null, "Invalid or expired verification token");
             return BadRequest(new { message = "Invalid or expired verification token." });
         }
 
@@ -164,6 +158,8 @@ public class AuthController(
         }
 
         var (Token, ExpiresAt) = _jwtService.GenerateToken(user);
+
+        _logger.LogUserAction("EmailVerified", user.Id, user.Username, "User", user.Id);
 
         return Ok(new
         {
@@ -207,6 +203,8 @@ public class AuthController(
         {
             return BadRequest(new { Message = result.Message });
         }
+
+        _logger.LogUserAction("VerificationEmailResent", user.Id, user.Username, "User", user.Id);
 
         return Ok(new
         {
@@ -263,7 +261,7 @@ public class AuthController(
         try
         {
             await _brevoEmailSender.SendPasswordResetEmailAsync(user.Id, user.Email, token);
-            _logger.LogInformation("Password reset email sent to {Email} for user {UserId}", user.Email, user.Id);
+            _logger.LogUserAction("PasswordResetRequested", user.Id, user.Username, "User", user.Id);
         }
         catch (Exception ex)
         {
@@ -312,7 +310,7 @@ public class AuthController(
 
         await _dbContext.SaveChangesAsync();
 
-        _logger.LogInformation("Password successfully reset for user {UserId}", user.Id);
+        _logger.LogUserAction("PasswordResetCompleted", user.Id, user.Username, "User", user.Id);
 
         return Ok(new { message = "Password has been reset successfully. You can now log in with your new password." });
     }

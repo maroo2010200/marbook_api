@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
+using MarbookApi.Extensions;
 using MarbookApi.Models;
 using MarbookApi.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -71,7 +72,7 @@ namespace MarbookApi.Controllers
                     NotificationType.UserFollowed);
             }
 
-            _logger.LogInformation("User {FollowerId} started following User {FolloweeId}", followerId, userId);
+            _logger.LogUserAction("UserFollowed", followerId, User.GetUsernameOrDefault(), "User", userId);
 
             return Created();
         }
@@ -108,7 +109,7 @@ namespace MarbookApi.Controllers
                     NotificationType.UserFollowed);
             }
 
-            _logger.LogInformation("User {FollowerId} unfollowed User {FolloweeId}", followerId, userId);
+            _logger.LogUserAction("UserUnfollowed", followerId, User.GetUsernameOrDefault(), "User", userId);
 
             return NoContent();
         }

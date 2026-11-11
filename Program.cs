@@ -2,6 +2,7 @@ using MarbookApi;
 using MarbookApi.Data;
 using MarbookApi.Exceptions;
 using MarbookApi.Hubs;
+using MarbookApi.Middleware;
 using MarbookApi.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -15,6 +16,27 @@ using System.Threading.RateLimiting;
 using Microsoft.Extensions.Caching.Hybrid;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+if (builder.Configuration.GetValue<bool>("Logging:UseJsonConsole"))
+{
+    builder.Logging.AddJsonConsole(options =>
+    {
+        options.IncludeScopes = true;
+        options.TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fffZ";
+        options.UseUtcTimestamp = true;
+    });
+}
+else
+{
+    builder.Logging.AddSimpleConsole(options =>
+    {
+        options.SingleLine = true;
+        options.IncludeScopes = true;
+        options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+        options.UseUtcTimestamp = true;
+    });
+}
 
 // Add services to the container.
 builder.Services.Configure<JwtOptions>(
@@ -255,6 +277,8 @@ app.UseCors("AllowFrontend");
 app.UseStaticFiles();
 
 app.UseAuthentication();
+
+app.UseMiddleware<RequestLoggingMiddleware>();
 
 app.UseRateLimiter();
 

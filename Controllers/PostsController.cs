@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
+using MarbookApi.Extensions;
 using MarbookApi.Hubs;
 using MarbookApi.Models;
 using MarbookApi.Services;
@@ -385,8 +386,6 @@ namespace MarbookApi.Controllers
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            _logger.LogInformation("User {UserId} is creating a post with visibility {Visibility}.", userId, postDto.Visibility);
-
             var user = await _dbContext.Users.FindAsync(userId);
             if (user == null)
             {
@@ -485,7 +484,13 @@ namespace MarbookApi.Controllers
                 }
             }
 
-            _logger.LogInformation("Post {PostId} created successfully by user {UserId}.", post.Id, userId);
+            _logger.LogUserAction(
+                rootPostId.HasValue ? "PostReposted" : "PostCreated",
+                userId,
+                user.Username,
+                "Post",
+                post.Id,
+                rootPostId.HasValue ? $"OriginalPostId={rootPostId.Value},Visibility={post.Visibility}" : $"Visibility={post.Visibility}");
 
             PostResponseDto? originalPostDto = null;
             if (originalPost != null)
@@ -598,6 +603,8 @@ namespace MarbookApi.Controllers
 
                 await _hubContext.Clients.All.SendAsync("PostDeleted", new { postId = existingRepost.Id });
 
+                _logger.LogUserAction("PostUnreposted", userId, User.GetUsernameOrDefault(), "Post", rootPostId);
+
                 return Ok(new RepostResponseDto
                 {
                     IsReposted = false,
@@ -678,6 +685,8 @@ namespace MarbookApi.Controllers
 
             await _hubContext.Clients.All.SendAsync("PostCreated", repostDto);
 
+            _logger.LogUserAction("PostReposted", userId, user.Username, "Post", repost.Id, $"OriginalPostId={rootPostId}");
+
             return Ok(new RepostResponseDto
             {
                 IsReposted = true,
@@ -702,7 +711,7 @@ namespace MarbookApi.Controllers
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
             if (post.UserId != userId)
             {
-                _logger.LogWarning("User {UserId} attempted to update post {PostId} owned by another user.", userId, post.UserId);
+                _logger.LogSecurityWarning("PostUpdateDenied", userId, User.GetUsernameOrDefault(), "Post", id, $"OwnerUserId={post.UserId}");
                 return Forbid();
             }
 
@@ -748,7 +757,7 @@ namespace MarbookApi.Controllers
             // Invalidate post cache
             await _cache.RemoveByTagAsync($"post-{id}");
 
-            _logger.LogInformation("Post {PostId} updated successfully by user {UserId}", post.Id, userId);
+            _logger.LogUserAction("PostUpdated", userId, post.User.Username, "Post", post.Id);
 
             var likesCount = await _dbContext.Likes.CountAsync(l => l.PostId == id);
             var commentsCount = await _dbContext.Comments.CountAsync(c => c.PostId == id);
@@ -786,6 +795,7 @@ namespace MarbookApi.Controllers
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
             if (post.UserId != userId)
             {
+                _logger.LogSecurityWarning("PostDeleteDenied", userId, User.GetUsernameOrDefault(), "Post", id, $"OwnerUserId={post.UserId}");
                 return Forbid();
             }
 
@@ -802,6 +812,8 @@ namespace MarbookApi.Controllers
 
             await _hubContext.Clients.All.SendAsync("PostDeleted", new { postId = id });
 
+            _logger.LogUserAction("PostDeleted", userId, User.GetUsernameOrDefault(), "Post", id);
+
             return NoContent();
         }
 
@@ -812,7 +824,11 @@ namespace MarbookApi.Controllers
             if (post == null) return NotFound("Post not found.");
 
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-            if (post.UserId != userId) return Forbid();
+            if (post.UserId != userId)
+            {
+                _logger.LogSecurityWarning("PostPinDenied", userId, User.GetUsernameOrDefault(), "Post", id, $"OwnerUserId={post.UserId}");
+                return Forbid();
+            }
 
             post.IsPinned = !post.IsPinned;
 
@@ -833,6 +849,7 @@ namespace MarbookApi.Controllers
             await _cache.RemoveByTagAsync("posts");
 
             await _hubContext.Clients.All.SendAsync("PostPinned", new { postId = id, userId, isPinned = post.IsPinned });
+            _logger.LogUserAction(post.IsPinned ? "PostPinned" : "PostUnpinned", userId, User.GetUsernameOrDefault(), "Post", id);
             return Ok(new { postId = id, isPinned = post.IsPinned });
         }
     }
