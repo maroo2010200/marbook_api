@@ -15,4 +15,5 @@ public class CommentResponseDto
     public int LikeCount { get; set; }
     public int ReplyCount { get; set; }
     public bool Liked { get; set; }
+    public bool IsPinned { get; set; }
 }

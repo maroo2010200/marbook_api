@@ -7,6 +7,7 @@ public class Post
     public PostVisibility Visibility { get; set; } = PostVisibility.Public;
     public int UserId { get; set; }
     public User User { get; set; } = null!;
+    public bool IsPinned { get; set; } = false;
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 
