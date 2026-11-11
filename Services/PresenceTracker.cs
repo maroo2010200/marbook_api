@@ -69,3 +69,4 @@ public class PresenceTracker : IPresenceTracker
         return Task.FromResult(_onlineUsers.ContainsKey(userId));
     }
 }
+

@@ -7,3 +7,4 @@ public interface IPresenceTracker
     Task<int[]> GetOnlineUsers();
     Task<bool> IsUserOnline(int userId);
 }
+
