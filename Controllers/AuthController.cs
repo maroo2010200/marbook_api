@@ -28,22 +28,31 @@ public class AuthController(AppDbContext dbContext, IJwtService jwtService, ILog
             return Conflict("Email is already registered.");
         }
 
-        if (!string.IsNullOrWhiteSpace(dto.Username))
+        var trimmedUsername = dto.Username.Trim().ToLowerInvariant();
+        var reservedWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
-            var usernameExist = await _dbContext.Users.AnyAsync(u => u.Username == dto.Username);
+            "login", "register", "verify", "feed", "settings", "messages",
+            "notifications", "search", "api", "admin", "profile", "me", "auth",
+            "about", "help", "support", "explore"
+        };
 
-            if (usernameExist)
-            {
-                return Conflict("Username is already taken.");
-            }
+        if (reservedWords.Contains(trimmedUsername))
+        {
+            return BadRequest("This username is reserved. Please choose another.");
+        }
+
+        var usernameExist = await _dbContext.Users.AnyAsync(u => u.Username != null && u.Username.ToLower() == trimmedUsername);
+        if (usernameExist)
+        {
+            return Conflict("Username is already taken.");
         }
 
         var user = new User
         {
-            Name = dto.Name,
-            Email = dto.Email,
+            Name = dto.Name.Trim(),
+            Email = dto.Email.Trim(),
             IsEmailVerified = false,
-            Username = dto.Username,
+            Username = trimmedUsername,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
             Birthdate = dto.Birthdate
         };
@@ -144,9 +153,13 @@ public class AuthController(AppDbContext dbContext, IJwtService jwtService, ILog
                 Name = user.Name,
                 Username = user.Username,
                 Email = user.Email,
+                Bio = user.Bio,
+                AvatarUrl = user.AvatarUrl,
+                CoverUrl = user.CoverUrl,
+                Birthdate = user.Birthdate,
                 IsEmailVerified = user.IsEmailVerified,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                CreatedAt = user.CreatedAt,
+                UpdatedAt = user.UpdatedAt
             }
         });
     }
