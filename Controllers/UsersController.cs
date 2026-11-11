@@ -86,7 +86,10 @@ namespace MarbookApi.Controllers
 
             user.Name = profileDto.Name.Trim();
             user.Bio = profileDto.Bio?.Trim();
-            user.Birthdate = profileDto.Birthdate;
+            if (profileDto.Birthdate != default)
+            {
+                user.Birthdate = profileDto.Birthdate;
+            }
             if (profileDto.IsBirthdatePrivate.HasValue)
             {
                 user.IsBirthdatePrivate = profileDto.IsBirthdatePrivate.Value;
