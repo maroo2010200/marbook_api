@@ -20,6 +20,7 @@ public class CloudinaryFileStorageService : IFileStorageService
 
     private const long MaxImageFileSize = 10 * 1024 * 1024; // 10 MB
     private const long MaxVideoFileSize = 100 * 1024 * 1024; // 100 MB
+    private const long MaxDocumentFileSize = 25 * 1024 * 1024; // 25 MB
 
     private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -31,8 +32,13 @@ public class CloudinaryFileStorageService : IFileStorageService
         ".mp4", ".webm", ".mov", ".mkv", ".ogg", ".m4v"
     };
 
+    private static readonly HashSet<string> DocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv", ".zip", ".rar", ".7z"
+    };
+
     private static readonly HashSet<string> AllowedExtensions = new(
-        ImageExtensions.Concat(VideoExtensions),
+        ImageExtensions.Concat(VideoExtensions).Concat(DocumentExtensions),
         StringComparer.OrdinalIgnoreCase
     );
 
@@ -41,7 +47,17 @@ public class CloudinaryFileStorageService : IFileStorageService
         { ".jpeg", new List<byte[]> { new byte[] { 0xFF, 0xD8, 0xFF } } },
         { ".jpg", new List<byte[]> { new byte[] { 0xFF, 0xD8, 0xFF } } },
         { ".png", new List<byte[]> { new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A } } },
-        { ".gif", new List<byte[]> { new byte[] { 0x47, 0x49, 0x46, 0x38 } } }
+        { ".gif", new List<byte[]> { new byte[] { 0x47, 0x49, 0x46, 0x38 } } },
+        { ".pdf", new List<byte[]> { new byte[] { 0x25, 0x50, 0x44, 0x46 } } }, // %PDF
+        { ".zip", new List<byte[]> { new byte[] { 0x50, 0x4B, 0x03, 0x04 } } }, // PK..
+        { ".docx", new List<byte[]> { new byte[] { 0x50, 0x4B, 0x03, 0x04 } } },
+        { ".xlsx", new List<byte[]> { new byte[] { 0x50, 0x4B, 0x03, 0x04 } } },
+        { ".pptx", new List<byte[]> { new byte[] { 0x50, 0x4B, 0x03, 0x04 } } },
+        { ".doc", new List<byte[]> { new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 } } },
+        { ".xls", new List<byte[]> { new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 } } },
+        { ".ppt", new List<byte[]> { new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 } } },
+        { ".rar", new List<byte[]> { new byte[] { 0x52, 0x61, 0x72, 0x21 } } }, // Rar!
+        { ".7z", new List<byte[]> { new byte[] { 0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C } } }
     };
 
     public CloudinaryFileStorageService(
@@ -72,14 +88,15 @@ public class CloudinaryFileStorageService : IFileStorageService
         }
 
         var isVideo = VideoExtensions.Contains(extension);
+        var isDocument = DocumentExtensions.Contains(extension);
 
-        if (isVideo && (subFolder.Equals("avatars", StringComparison.OrdinalIgnoreCase) ||
+        if ((isVideo || isDocument) && (subFolder.Equals("avatars", StringComparison.OrdinalIgnoreCase) ||
                         subFolder.Equals("covers", StringComparison.OrdinalIgnoreCase)))
         {
-            throw new InvalidOperationException("Videos cannot be used as avatars or profile covers.");
+            throw new InvalidOperationException("Videos and document files cannot be used as avatars or profile covers.");
         }
 
-        var maxAllowedSize = isVideo ? MaxVideoFileSize : MaxImageFileSize;
+        var maxAllowedSize = isVideo ? MaxVideoFileSize : isDocument ? MaxDocumentFileSize : MaxImageFileSize;
         if (file.Length > maxAllowedSize)
         {
             var limitMb = maxAllowedSize / (1024 * 1024);
@@ -136,6 +153,33 @@ public class CloudinaryFileStorageService : IFileStorageService
             return videoResult.SecureUrl.ToString();
         }
 
+        if (isDocument)
+        {
+            var cleanFileName = Path.GetFileNameWithoutExtension(file.FileName);
+            var safeFileName = string.Join("", cleanFileName.Where(c => char.IsLetterOrDigit(c) || c == '-' || c == '_'));
+            if (string.IsNullOrWhiteSpace(safeFileName)) safeFileName = "document";
+
+            var rawParams = new RawUploadParams
+            {
+                File = new FileDescription(file.FileName, stream),
+                Folder = folderPath,
+                PublicId = $"{publicId}_{safeFileName}{extension}",
+                Overwrite = false,
+                UseFilename = true,
+                UniqueFilename = true
+            };
+
+            var rawResult = await _cloudinary.UploadAsync(rawParams);
+            if (rawResult.Error != null)
+            {
+                _logger.LogError("Cloudinary document upload failed: {Error}", rawResult.Error.Message);
+                throw new InvalidOperationException($"Cloudinary upload failed: {rawResult.Error.Message}");
+            }
+
+            _logger.LogInformation("Successfully uploaded document {FileName} to Cloudinary: {Url}", file.FileName, rawResult.SecureUrl);
+            return rawResult.SecureUrl.ToString();
+        }
+
         var uploadParams = new ImageUploadParams
         {
             File = new FileDescription(file.FileName, stream),
@@ -183,14 +227,18 @@ public class CloudinaryFileStorageService : IFileStorageService
                 }
 
                 var fullPath = string.Join("/", relativeSegments);
-                var publicId = Path.ChangeExtension(fullPath, null);
+                bool isVideo = fileUrl.Contains("/video/upload/", StringComparison.OrdinalIgnoreCase);
+                bool isRaw = fileUrl.Contains("/raw/upload/", StringComparison.OrdinalIgnoreCase);
+
+                // For Raw assets in Cloudinary, the public_id includes the file extension.
+                // For Image and Video assets, Cloudinary public_id omits the file extension.
+                var publicId = isRaw ? fullPath : Path.ChangeExtension(fullPath, null);
 
                 if (!string.IsNullOrEmpty(publicId))
                 {
-                    bool isVideo = fileUrl.Contains("/video/upload/", StringComparison.OrdinalIgnoreCase);
                     var deleteParams = new DeletionParams(publicId)
                     {
-                        ResourceType = isVideo ? ResourceType.Video : ResourceType.Image
+                        ResourceType = isVideo ? ResourceType.Video : isRaw ? ResourceType.Raw : ResourceType.Image
                     };
                     var result = await _cloudinary.DestroyAsync(deleteParams);
                     _logger.LogInformation("Deleted asset from Cloudinary: {PublicId}, Result: {Result}", publicId, result.Result);
@@ -245,6 +293,12 @@ public class CloudinaryFileStorageService : IFileStorageService
         {
             // OggS: 4F 67 67 53
             return headerBytes[0] == 0x4F && headerBytes[1] == 0x67 && headerBytes[2] == 0x67 && headerBytes[3] == 0x53;
+        }
+
+        if (extension == ".txt" || extension == ".csv")
+        {
+            // Plain text files must not contain null bytes in their leading bytes
+            return !headerBytes.Contains((byte)0x00);
         }
 
         if (FileSignatures.TryGetValue(extension, out var signatures))

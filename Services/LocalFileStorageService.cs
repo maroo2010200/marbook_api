@@ -11,10 +11,16 @@ public class LocalFileStorageService : IFileStorageService
 
     private const long MaxImageFileSize = 10 * 1024 * 1024; // 10 MB
     private const long MaxVideoFileSize = 100 * 1024 * 1024; // 100 MB
+    private const long MaxDocumentFileSize = 25 * 1024 * 1024; // 25 MB
 
     private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".mp4", ".webm", ".mov", ".mkv", ".ogg", ".m4v"
+    };
+
+    private static readonly HashSet<string> DocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".csv", ".zip", ".rar", ".7z"
     };
 
     // Allowed extensions and their expected MIME types
@@ -30,7 +36,19 @@ public class LocalFileStorageService : IFileStorageService
         { ".mov", new[] { "video/quicktime" } },
         { ".mkv", new[] { "video/x-matroska" } },
         { ".ogg", new[] { "video/ogg", "audio/ogg" } },
-        { ".m4v", new[] { "video/x-m4v", "video/mp4" } }
+        { ".m4v", new[] { "video/x-m4v", "video/mp4" } },
+        { ".pdf", new[] { "application/pdf" } },
+        { ".doc", new[] { "application/msword" } },
+        { ".docx", new[] { "application/vnd.openxmlformats-officedocument.wordprocessingml.document" } },
+        { ".xls", new[] { "application/vnd.ms-excel" } },
+        { ".xlsx", new[] { "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } },
+        { ".ppt", new[] { "application/vnd.ms-powerpoint" } },
+        { ".pptx", new[] { "application/vnd.openxmlformats-officedocument.presentationml.presentation" } },
+        { ".txt", new[] { "text/plain" } },
+        { ".csv", new[] { "text/csv", "text/plain" } },
+        { ".zip", new[] { "application/zip", "application/x-zip-compressed" } },
+        { ".rar", new[] { "application/vnd.rar", "application/x-rar-compressed" } },
+        { ".7z", new[] { "application/x-7z-compressed" } }
     };
 
     // Magic bytes (file signatures)
@@ -39,7 +57,17 @@ public class LocalFileStorageService : IFileStorageService
         { ".jpeg", new List<byte[]> { new byte[] { 0xFF, 0xD8, 0xFF } } },
         { ".jpg", new List<byte[]> { new byte[] { 0xFF, 0xD8, 0xFF } } },
         { ".png", new List<byte[]> { new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A } } },
-        { ".gif", new List<byte[]> { new byte[] { 0x47, 0x49, 0x46, 0x38 } } }
+        { ".gif", new List<byte[]> { new byte[] { 0x47, 0x49, 0x46, 0x38 } } },
+        { ".pdf", new List<byte[]> { new byte[] { 0x25, 0x50, 0x44, 0x46 } } }, // %PDF
+        { ".zip", new List<byte[]> { new byte[] { 0x50, 0x4B, 0x03, 0x04 } } }, // PK..
+        { ".docx", new List<byte[]> { new byte[] { 0x50, 0x4B, 0x03, 0x04 } } },
+        { ".xlsx", new List<byte[]> { new byte[] { 0x50, 0x4B, 0x03, 0x04 } } },
+        { ".pptx", new List<byte[]> { new byte[] { 0x50, 0x4B, 0x03, 0x04 } } },
+        { ".doc", new List<byte[]> { new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 } } },
+        { ".xls", new List<byte[]> { new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 } } },
+        { ".ppt", new List<byte[]> { new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 } } },
+        { ".rar", new List<byte[]> { new byte[] { 0x52, 0x61, 0x72, 0x21 } } }, // Rar!
+        { ".7z", new List<byte[]> { new byte[] { 0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C } } }
     };
 
     public LocalFileStorageService(IWebHostEnvironment env, ILogger<LocalFileStorageService> logger)
@@ -62,14 +90,15 @@ public class LocalFileStorageService : IFileStorageService
         }
 
         var isVideo = VideoExtensions.Contains(extension);
+        var isDocument = DocumentExtensions.Contains(extension);
 
-        if (isVideo && (subFolder.Equals("avatars", StringComparison.OrdinalIgnoreCase) ||
+        if ((isVideo || isDocument) && (subFolder.Equals("avatars", StringComparison.OrdinalIgnoreCase) ||
                         subFolder.Equals("covers", StringComparison.OrdinalIgnoreCase)))
         {
-            throw new InvalidOperationException("Videos cannot be used as avatars or profile covers.");
+            throw new InvalidOperationException("Videos and document files cannot be used as avatars or profile covers.");
         }
 
-        var maxAllowedSize = isVideo ? MaxVideoFileSize : MaxImageFileSize;
+        var maxAllowedSize = isVideo ? MaxVideoFileSize : isDocument ? MaxDocumentFileSize : MaxImageFileSize;
         if (file.Length > maxAllowedSize)
         {
             var limitMb = maxAllowedSize / (1024 * 1024);
@@ -192,6 +221,12 @@ public class LocalFileStorageService : IFileStorageService
         {
             // OggS: 4F 67 67 53
             return headerBytes[0] == 0x4F && headerBytes[1] == 0x67 && headerBytes[2] == 0x67 && headerBytes[3] == 0x53;
+        }
+
+        if (extension == ".txt" || extension == ".csv")
+        {
+            // Plain text files must not contain null bytes in their leading bytes
+            return !headerBytes.Contains((byte)0x00);
         }
 
         if (FileSignatures.TryGetValue(extension, out var signatures))
