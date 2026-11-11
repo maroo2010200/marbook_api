@@ -6,7 +6,8 @@ public enum NotificationType
     CommentLiked = 2,
     CommentCreated = 3,
     ReplyCreated = 4,
-    UserFollowed = 5
+    UserFollowed = 5,
+    PostReposted = 6
 }
 
 public class Notification

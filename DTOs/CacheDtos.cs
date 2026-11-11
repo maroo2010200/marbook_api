@@ -28,6 +28,9 @@ namespace MarbookApi.DTOs
         DateTime UpdatedAt,
         int LikesCount,
         int CommentsCount,
-        List<string> ImageUrls
+        List<string> ImageUrls,
+        int? OriginalPostId = null,
+        PostResponseDto? OriginalPost = null,
+        int RepostsCount = 0
     );
 }

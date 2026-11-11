@@ -16,4 +16,8 @@ public class PostResponseDto
     public int CommentsCount { get; set; }
     public bool IsLiked { get; set; }
     public List<string> ImageUrls { get; set; } = new();
+    public int? OriginalPostId { get; set; }
+    public PostResponseDto? OriginalPost { get; set; }
+    public int RepostsCount { get; set; }
+    public bool IsReposted { get; set; }
 }

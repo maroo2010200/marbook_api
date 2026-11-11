@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using MarbookApi.Models;
 
 namespace MarbookApi.DTOs;
@@ -9,6 +9,8 @@ public class PostCreateDto
     public string? Content { get; set; }
 
     public PostVisibility Visibility { get; set; } = PostVisibility.Public;
+
+    public int? OriginalPostId { get; set; }
 
     public List<string> ImageUrls { get; set; } = new();
 }
