@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
+using MarbookApi.Extensions;
 using MarbookApi.Hubs;
 using MarbookApi.Models;
 using MarbookApi.Services;
@@ -19,12 +20,14 @@ namespace MarbookApi.Controllers
         AppDbContext dbContext,
         INotificationService notificationService,
         HybridCache cache,
-        IHubContext<NotificationHub> hubContext) : ControllerBase
+        IHubContext<NotificationHub> hubContext,
+        ILogger<LikesController> logger) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
         private readonly INotificationService _notificationService = notificationService;
         private readonly HybridCache _cache = cache;
         private readonly IHubContext<NotificationHub> _hubContext = hubContext;
+        private readonly ILogger _logger = logger;
 
         [HttpPost]
         public async Task<ActionResult<Like>> CreateLike(int postId)
@@ -71,6 +74,7 @@ namespace MarbookApi.Controllers
 
             var likeCount = await _dbContext.Likes.CountAsync(l => l.PostId == postId);
             await _hubContext.Clients.All.SendAsync("PostLiked", new { postId, likeCount, userId, isLiked = true });
+            _logger.LogUserAction("PostLiked", userId, user.Username, "Post", postId);
             return Ok(new { liked = true, likeCount });
         }
 
@@ -104,6 +108,7 @@ namespace MarbookApi.Controllers
 
             var likeCount = await _dbContext.Likes.CountAsync(l => l.PostId == postId);
             await _hubContext.Clients.All.SendAsync("PostLiked", new { postId, likeCount, userId, isLiked = false });
+            _logger.LogUserAction("PostUnliked", userId, User.GetUsernameOrDefault(), "Post", postId);
             return Ok(new { liked = false, likeCount });
         }
     }

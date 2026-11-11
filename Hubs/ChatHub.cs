@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
+using MarbookApi.Extensions;
 using MarbookApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -23,6 +24,7 @@ public class ChatHub(
         var userIdStr = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
         if (int.TryParse(userIdStr, out var userId))
         {
+            _logger.LogUserAction("ChatHubConnected", userId, Context.User.GetUsernameOrDefault(), "SignalR", Context.ConnectionId);
             var isOnline = await _presenceTracker.UserConnected(userId, Context.ConnectionId);
             if (isOnline)
             {
@@ -41,6 +43,7 @@ public class ChatHub(
         var userIdStr = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
         if (int.TryParse(userIdStr, out var userId))
         {
+            _logger.LogUserAction("ChatHubDisconnected", userId, Context.User.GetUsernameOrDefault(), "SignalR", Context.ConnectionId, exception?.Message);
             var isOffline = await _presenceTracker.UserDisconnected(userId, Context.ConnectionId);
             if (isOffline)
             {

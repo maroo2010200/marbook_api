@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 ﻿using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
+using MarbookApi.Extensions;
 using MarbookApi.Hubs;
 using MarbookApi.Models;
 using MarbookApi.Services;
@@ -20,12 +21,14 @@ namespace MarbookApi.Controllers
         AppDbContext dbContext,
         INotificationService notificationService,
         HybridCache cache,
-        IHubContext<NotificationHub> hubContext) : ControllerBase
+        IHubContext<NotificationHub> hubContext,
+        ILogger<CommentsController> logger) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
         private readonly INotificationService _notificationService = notificationService;
         private readonly HybridCache _cache = cache;
         private readonly IHubContext<NotificationHub> _hubContext = hubContext;
+        private readonly ILogger _logger = logger;
 
         [HttpGet]
         [AllowAnonymous]
@@ -118,6 +121,8 @@ namespace MarbookApi.Controllers
 
             await _hubContext.Clients.All.SendAsync("CommentCreated", new { postId, comment = commentResponseDto });
 
+            _logger.LogUserAction("CommentCreated", userId, user.Username, "Comment", comment.Id, $"PostId={postId}");
+
             return CreatedAtAction(nameof(GetComments), new { postId }, commentResponseDto);
         }
 
@@ -177,6 +182,8 @@ namespace MarbookApi.Controllers
 
             await _hubContext.Clients.All.SendAsync("CommentLiked", new { commentId, postId = comment.PostId, likeCount, userId, isLiked });
 
+            _logger.LogUserAction(isLiked ? "CommentLiked" : "CommentUnliked", userId, User.GetUsernameOrDefault(), "Comment", commentId, $"PostId={comment.PostId}");
+
             return Ok(new { likeCount, liked = isLiked, isLiked });
         }
 
@@ -228,6 +235,8 @@ namespace MarbookApi.Controllers
             var response = MapToDto(reply, user);
 
             await _hubContext.Clients.All.SendAsync("CommentCreated", new { postId = parentComment.PostId, comment = response });
+
+            _logger.LogUserAction("ReplyCreated", userId, user.Username, "Comment", reply.Id, $"PostId={parentComment.PostId},ParentCommentId={commentId}");
 
             return Ok(response);
         }
@@ -289,6 +298,7 @@ namespace MarbookApi.Controllers
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
             if (comment.UserId != userId)
             {
+                _logger.LogSecurityWarning("CommentUpdateDenied", userId, User.GetUsernameOrDefault(), "Comment", commentId, $"OwnerUserId={comment.UserId}");
                 return Forbid();
             }
 
@@ -308,6 +318,8 @@ namespace MarbookApi.Controllers
 
             var responseDto = MapToDto(comment, comment.User, likeCount, replyCounts.GetValueOrDefault(comment.Id, 0), isLiked);
 
+            _logger.LogUserAction("CommentUpdated", userId, comment.User.Username, "Comment", commentId, $"PostId={comment.PostId}");
+
             return Ok(responseDto);
         }
 
@@ -323,6 +335,7 @@ namespace MarbookApi.Controllers
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
             if (comment.UserId != userId)
             {
+                _logger.LogSecurityWarning("CommentDeleteDenied", userId, User.GetUsernameOrDefault(), "Comment", commentId, $"OwnerUserId={comment.UserId}");
                 return Forbid();
             }
 
@@ -333,6 +346,8 @@ namespace MarbookApi.Controllers
             await _cache.RemoveByTagAsync($"post-{comment.PostId}");
 
             await _hubContext.Clients.All.SendAsync("CommentDeleted", new { commentId, postId = comment.PostId });
+
+            _logger.LogUserAction("CommentDeleted", userId, User.GetUsernameOrDefault(), "Comment", commentId, $"PostId={comment.PostId}");
 
             return NoContent();
         }
@@ -353,6 +368,7 @@ namespace MarbookApi.Controllers
             // Pinned by post author only
             if (comment.Post.UserId != userId)
             {
+                _logger.LogSecurityWarning("CommentPinDenied", userId, User.GetUsernameOrDefault(), "Comment", commentId, $"PostAuthorUserId={comment.Post.UserId}");
                 return Forbid();
             }
 
@@ -376,6 +392,8 @@ namespace MarbookApi.Controllers
             await _cache.RemoveByTagAsync($"post-{comment.PostId}");
 
             await _hubContext.Clients.All.SendAsync("CommentPinned", new { commentId, postId = comment.PostId, isPinned = comment.IsPinned });
+
+            _logger.LogUserAction(comment.IsPinned ? "CommentPinned" : "CommentUnpinned", userId, User.GetUsernameOrDefault(), "Comment", commentId, $"PostId={comment.PostId}");
 
             return Ok(new { commentId, isPinned = comment.IsPinned });
         }

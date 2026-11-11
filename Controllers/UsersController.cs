@@ -1,4 +1,5 @@
 using MarbookApi.Data;
+using MarbookApi.Extensions;
 using MarbookApi.Models;
 using MarbookApi.DTOs;
 using Microsoft.AspNetCore.Mvc;
@@ -11,10 +12,11 @@ namespace MarbookApi.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    public class UsersController(AppDbContext dbContext, HybridCache cache) : ControllerBase
+    public class UsersController(AppDbContext dbContext, HybridCache cache, ILogger<UsersController> logger) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
         private readonly HybridCache _cache = cache;
+        private readonly ILogger _logger = logger;
 
         [HttpGet("me")]
         [Authorize]
@@ -102,6 +104,8 @@ namespace MarbookApi.Controllers
 
             // Invalidate all cached data for this user (profile, user DTO, etc.)
             await _cache.RemoveByTagAsync($"user-{userId}");
+
+            _logger.LogUserAction("ProfileUpdated", user.Id, user.Username, "User", user.Id);
 
             var result = await BuildUserProfileDto(user, userId);
             return Ok(result);
@@ -430,6 +434,7 @@ namespace MarbookApi.Controllers
 
             if (!BCrypt.Net.BCrypt.Verify(dto.CurrentPassword, user.PasswordHash))
             {
+                _logger.LogSecurityWarning("PasswordChangeFailed", userId, user.Username, "User", userId, "Incorrect current password");
                 return BadRequest(new { message = "Current password is incorrect." });
             }
 
@@ -438,6 +443,8 @@ namespace MarbookApi.Controllers
 
             await _dbContext.SaveChangesAsync();
             await _cache.RemoveByTagAsync($"user-{userId}");
+
+            _logger.LogUserAction("PasswordChanged", userId, user.Username, "User", userId);
 
             return Ok(new { message = "Password changed successfully." });
         }
@@ -460,6 +467,7 @@ namespace MarbookApi.Controllers
 
             if (!BCrypt.Net.BCrypt.Verify(dto.Password, user.PasswordHash))
             {
+                _logger.LogSecurityWarning("AccountDeletionFailed", userId, user.Username, "User", userId, "Incorrect password");
                 return BadRequest(new { message = "Incorrect password. Account was not deleted." });
             }
 
@@ -467,6 +475,8 @@ namespace MarbookApi.Controllers
             await _dbContext.SaveChangesAsync();
 
             await _cache.RemoveByTagAsync($"user-{userId}");
+
+            _logger.LogUserAction("AccountDeleted", userId, user.Username, "User", userId);
 
             return Ok(new { message = "Account deleted successfully." });
         }

@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
+using MarbookApi.Extensions;
 using MarbookApi.Hubs;
 using MarbookApi.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -129,6 +130,8 @@ public class ConversationsController(
 
         _dbContext.Conversations.Add(newConversation);
         await _dbContext.SaveChangesAsync();
+
+        _logger.LogUserAction("ConversationStarted", currentUserId, User.GetUsernameOrDefault(), "Conversation", newConversation.Id, $"TargetUserId={dto.TargetUserId}");
 
         if (!string.IsNullOrWhiteSpace(dto.InitialMessage))
         {
@@ -276,6 +279,8 @@ public class ConversationsController(
         var messageDto = MapToDto(message, currentUserId);
         await BroadcastToConversationAsync(id, "MessageEdited", messageDto);
 
+        _logger.LogUserAction("MessageEdited", currentUserId, message.SenderUser.Username, "Message", messageId, $"ConversationId={id}");
+
         return Ok(messageDto);
     }
 
@@ -346,6 +351,8 @@ public class ConversationsController(
         };
         await BroadcastToConversationAsync(id, "MessageDeleted", deletePayload);
 
+        _logger.LogUserAction("MessageDeleted", currentUserId, User.GetUsernameOrDefault(), "Message", messageId, $"ConversationId={id}");
+
         return NoContent();
     }
 
@@ -391,6 +398,8 @@ public class ConversationsController(
             isPinned = message.IsPinned
         });
 
+        _logger.LogUserAction(message.IsPinned ? "MessagePinned" : "MessageUnpinned", currentUserId, User.GetUsernameOrDefault(), "Message", messageId, $"ConversationId={id}");
+
         return Ok(new { conversationId = id, messageId, isPinned = message.IsPinned });
     }
 
@@ -420,6 +429,7 @@ public class ConversationsController(
         await _dbContext.SaveChangesAsync();
 
         var sender = await _dbContext.Users.FindAsync(senderUserId);
+        _logger.LogUserAction("MessageSent", senderUserId, sender?.Username, "Message", message.Id, $"ConversationId={conversation.Id}");
 
         var senderMessageDto = MapToDto(message, currentUserId: senderUserId, sender);
         var recipientMessageDto = MapToDto(message, currentUserId: -1, sender);

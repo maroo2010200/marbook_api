@@ -1,3 +1,4 @@
+using MarbookApi.Extensions;
 using MarbookApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -41,6 +42,7 @@ public class MediaController : ControllerBase
         try
         {
             var url = await _fileStorageService.SaveFileAsync(file, folder);
+            _logger.LogUserAction("MediaUploaded", User.GetUserIdOrNull(), User.GetUsernameOrDefault(), "Media", folder, $"Size={file.Length}");
             return Ok(new { url });
         }
         catch (ArgumentException ex)
@@ -86,6 +88,7 @@ public class MediaController : ControllerBase
                 }
             }
 
+            _logger.LogUserAction("MediaUploadedBatch", User.GetUserIdOrNull(), User.GetUsernameOrDefault(), "Media", folder, $"Count={urls.Count}");
             return Ok(new { urls });
         }
         catch (ArgumentException ex)
