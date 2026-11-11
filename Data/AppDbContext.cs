@@ -1,4 +1,4 @@
-﻿using MarbookApi.Models;
+using MarbookApi.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace MarbookApi.Data
@@ -14,6 +14,7 @@ namespace MarbookApi.Data
         public DbSet<Follow> Follows { get; set; }
         public DbSet<Notification> Notifications { get; set; }
         public DbSet<EmailVerification> EmailVerifications { get; set; } = null!;
+        public DbSet<PasswordReset> PasswordResets { get; set; } = null!;
         public DbSet<Conversation> Conversations { get; set; }
         public DbSet<ConversationParticipant> ConversationParticipants { get; set; }
         public DbSet<Message> Messages { get; set; }
@@ -69,6 +70,19 @@ namespace MarbookApi.Data
                 .WithMany()
                 .HasForeignKey(ev => ev.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            modelBuilder.Entity<PasswordReset>(entity =>
+            {
+                entity.HasKey(pr => pr.Id);
+                entity.Property(pr => pr.Token)
+                    .IsRequired()
+                    .HasMaxLength(256);
+                entity.HasIndex(pr => pr.Token);
+                entity.HasOne(pr => pr.User)
+                    .WithMany()
+                    .HasForeignKey(pr => pr.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            });
                 
             modelBuilder.Entity<Post>(entity =>
             {

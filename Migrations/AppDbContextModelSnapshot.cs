@@ -331,6 +331,40 @@ namespace MarbookApi.Migrations
                     b.ToTable("Notifications");
                 });
 
+            modelBuilder.Entity("MarbookApi.Models.PasswordReset", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsUsed")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Token")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Token");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("PasswordResets");
+                });
+
             modelBuilder.Entity("MarbookApi.Models.Post", b =>
                 {
                     b.Property<int>("Id")
@@ -632,6 +666,17 @@ namespace MarbookApi.Migrations
                     b.Navigation("TargetComment");
 
                     b.Navigation("TargetPost");
+                });
+
+            modelBuilder.Entity("MarbookApi.Models.PasswordReset", b =>
+                {
+                    b.HasOne("MarbookApi.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("MarbookApi.Models.Post", b =>
