@@ -32,6 +32,7 @@ namespace MarbookApi.DTOs
         List<string> ImageUrls,
         int? OriginalPostId = null,
         PostResponseDto? OriginalPost = null,
-        int RepostsCount = 0
+        int RepostsCount = 0,
+        bool IsPinned = false
     );
 }

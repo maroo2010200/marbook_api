@@ -20,4 +20,5 @@ public class PostResponseDto
     public PostResponseDto? OriginalPost { get; set; }
     public int RepostsCount { get; set; }
     public bool IsReposted { get; set; }
+    public bool IsPinned { get; set; }
 }

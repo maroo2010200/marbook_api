@@ -103,6 +103,9 @@ namespace MarbookApi.Data
 
                 entity.Property(p => p.Visibility)
                     .HasDefaultValue(PostVisibility.Public);
+
+                entity.Property(p => p.IsPinned)
+                    .HasDefaultValue(false);
                 
                 entity.HasOne(p => p.User)
                     .WithMany(u => u.Posts)
@@ -151,6 +154,9 @@ namespace MarbookApi.Data
 
                 entity.Property(c => c.UpdatedAt)
                     .HasDefaultValueSql("NOW()");
+
+                entity.Property(c => c.IsPinned)
+                    .HasDefaultValue(false);
 
                 entity.HasOne(c => c.User)
                     .WithMany(u => u.Comments)
@@ -316,6 +322,9 @@ namespace MarbookApi.Data
                     .HasDefaultValueSql("NOW()");
 
                 entity.Property(m => m.IsDeleted)
+                    .HasDefaultValue(false);
+
+                entity.Property(m => m.IsPinned)
                     .HasDefaultValue(false);
 
                 entity.HasIndex(m => new { m.ConversationId, m.CreatedAt });

@@ -1,10 +1,12 @@
 using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
+using MarbookApi.Hubs;
 using MarbookApi.Models;
 using MarbookApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 
@@ -13,11 +15,16 @@ namespace MarbookApi.Controllers
     [ApiController]
     [Route("api/posts/{postId:int}/[controller]")]
     [Authorize]
-    public class LikesController(AppDbContext dbContext, INotificationService notificationService, HybridCache cache) : ControllerBase
+    public class LikesController(
+        AppDbContext dbContext,
+        INotificationService notificationService,
+        HybridCache cache,
+        IHubContext<NotificationHub> hubContext) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
         private readonly INotificationService _notificationService = notificationService;
         private readonly HybridCache _cache = cache;
+        private readonly IHubContext<NotificationHub> _hubContext = hubContext;
 
         [HttpPost]
         public async Task<ActionResult<Like>> CreateLike(int postId)
@@ -63,6 +70,7 @@ namespace MarbookApi.Controllers
                 postId);
 
             var likeCount = await _dbContext.Likes.CountAsync(l => l.PostId == postId);
+            await _hubContext.Clients.All.SendAsync("PostLiked", new { postId, likeCount, userId, isLiked = true });
             return Ok(new { liked = true, likeCount });
         }
 
@@ -95,6 +103,7 @@ namespace MarbookApi.Controllers
             }
 
             var likeCount = await _dbContext.Likes.CountAsync(l => l.PostId == postId);
+            await _hubContext.Clients.All.SendAsync("PostLiked", new { postId, likeCount, userId, isLiked = false });
             return Ok(new { liked = false, likeCount });
         }
     }

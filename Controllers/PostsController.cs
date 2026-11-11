@@ -1,11 +1,13 @@
 using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
+using MarbookApi.Hubs;
 using MarbookApi.Models;
 using MarbookApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 
@@ -18,12 +20,14 @@ namespace MarbookApi.Controllers
         AppDbContext dbContext,
         ILogger<PostsController> logger,
         HybridCache cache,
-        INotificationService notificationService) : ControllerBase
+        INotificationService notificationService,
+        IHubContext<NotificationHub> hubContext) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
         private readonly ILogger _logger = logger;
         private readonly HybridCache _cache = cache;
         private readonly INotificationService _notificationService = notificationService;
+        private readonly IHubContext<NotificationHub> _hubContext = hubContext;
 
         [HttpGet]
         [AllowAnonymous]
@@ -93,7 +97,14 @@ namespace MarbookApi.Controllers
                 query = query.Where(p => EF.Functions.ILike(p.Content, $"%{search}%"));
             }
 
-            query = query.OrderByDescending(p => p.CreatedAt);
+            if (userId.HasValue)
+            {
+                query = query.OrderByDescending(p => p.IsPinned).ThenByDescending(p => p.CreatedAt);
+            }
+            else
+            {
+                query = query.OrderByDescending(p => p.CreatedAt);
+            }
 
             var totalCount = await query.CountAsync();
 
@@ -129,10 +140,12 @@ namespace MarbookApi.Controllers
                         UserId = p.OriginalPost.UserId,
                         LikesCount = p.OriginalPost.Likes.Count(),
                         CommentsCount = p.OriginalPost.Comments.Count(),
-                        ImageUrls = p.OriginalPost.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList()
+                        ImageUrls = p.OriginalPost.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList(),
+                        IsPinned = p.OriginalPost.IsPinned
                     },
                     RepostsCount = p.Reposts.Count(),
-                    IsReposted = currentUserId.HasValue && p.Reposts.Any(r => r.UserId == currentUserId.Value)
+                    IsReposted = currentUserId.HasValue && p.Reposts.Any(r => r.UserId == currentUserId.Value),
+                    IsPinned = p.IsPinned
                 })
                 .ToListAsync();
 
@@ -300,7 +313,8 @@ namespace MarbookApi.Controllers
                         p.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList(),
                         p.OriginalPostId,
                         originalPostDto,
-                        p.Reposts.Count
+                        p.Reposts.Count,
+                        p.IsPinned
                     );
                 },
                 tags: [$"post-{id}"],
@@ -358,7 +372,8 @@ namespace MarbookApi.Controllers
                 OriginalPostId = post.OriginalPostId,
                 OriginalPost = post.OriginalPost,
                 RepostsCount = post.RepostsCount,
-                IsReposted = isReposted
+                IsReposted = isReposted,
+                IsPinned = post.IsPinned
             };
 
             return Ok(responseDto);
@@ -509,8 +524,11 @@ namespace MarbookApi.Controllers
                 OriginalPostId = rootPostId,
                 OriginalPost = originalPostDto,
                 RepostsCount = 0,
-                IsReposted = false
+                IsReposted = false,
+                IsPinned = post.IsPinned
             };
+
+            await _hubContext.Clients.All.SendAsync("PostCreated", responseDto);
 
             return CreatedAtAction(nameof(GetPost), new { id = post.Id }, responseDto);
         }
@@ -577,6 +595,8 @@ namespace MarbookApi.Controllers
                 }
 
                 var count = await _dbContext.Posts.CountAsync(p => p.OriginalPostId == rootPostId);
+
+                await _hubContext.Clients.All.SendAsync("PostDeleted", new { postId = existingRepost.Id });
 
                 return Ok(new RepostResponseDto
                 {
@@ -652,8 +672,11 @@ namespace MarbookApi.Controllers
                 OriginalPostId = rootPostId,
                 OriginalPost = originalPostDto,
                 RepostsCount = 0,
-                IsReposted = false
+                IsReposted = false,
+                IsPinned = repost.IsPinned
             };
+
+            await _hubContext.Clients.All.SendAsync("PostCreated", repostDto);
 
             return Ok(new RepostResponseDto
             {
@@ -744,7 +767,8 @@ namespace MarbookApi.Controllers
                 LikesCount = likesCount,
                 CommentsCount = commentsCount,
                 IsLiked = isLiked,
-                ImageUrls = post.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList()
+                ImageUrls = post.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList(),
+                IsPinned = post.IsPinned
             };
 
             return Ok(responseDto);
@@ -776,7 +800,40 @@ namespace MarbookApi.Controllers
             }
             await _cache.RemoveByTagAsync($"user-{userId}");
 
+            await _hubContext.Clients.All.SendAsync("PostDeleted", new { postId = id });
+
             return NoContent();
+        }
+
+        [HttpPost("{id:int}/Pin")]
+        public async Task<IActionResult> TogglePinPost(int id)
+        {
+            var post = await _dbContext.Posts.FindAsync(id);
+            if (post == null) return NotFound("Post not found.");
+
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            if (post.UserId != userId) return Forbid();
+
+            post.IsPinned = !post.IsPinned;
+
+            if (post.IsPinned)
+            {
+                // Unpin previous pinned posts by this user so user has at most 1 pinned post
+                var otherPinned = await _dbContext.Posts
+                    .Where(p => p.UserId == userId && p.Id != id && p.IsPinned)
+                    .ToListAsync();
+                foreach (var op in otherPinned)
+                {
+                    op.IsPinned = false;
+                }
+            }
+
+            await _dbContext.SaveChangesAsync();
+            await _cache.RemoveByTagAsync($"post-{id}");
+            await _cache.RemoveByTagAsync("posts");
+
+            await _hubContext.Clients.All.SendAsync("PostPinned", new { postId = id, userId, isPinned = post.IsPinned });
+            return Ok(new { postId = id, isPinned = post.IsPinned });
         }
     }
 }

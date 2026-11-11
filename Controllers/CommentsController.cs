@@ -2,10 +2,12 @@ using System.Linq.Expressions;
 ﻿using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
+using MarbookApi.Hubs;
 using MarbookApi.Models;
 using MarbookApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Hybrid;
 
@@ -14,11 +16,16 @@ namespace MarbookApi.Controllers
     [ApiController]
     [Route("api/posts/{postId:int}/[controller]")]
     [Authorize]
-    public class CommentsController(AppDbContext dbContext, INotificationService notificationService, HybridCache cache) : ControllerBase
+    public class CommentsController(
+        AppDbContext dbContext,
+        INotificationService notificationService,
+        HybridCache cache,
+        IHubContext<NotificationHub> hubContext) : ControllerBase
     {
         private readonly AppDbContext _dbContext = dbContext;
         private readonly INotificationService _notificationService = notificationService;
         private readonly HybridCache _cache = cache;
+        private readonly IHubContext<NotificationHub> _hubContext = hubContext;
 
         [HttpGet]
         [AllowAnonymous]
@@ -31,7 +38,8 @@ namespace MarbookApi.Controllers
             var query = _dbContext.Comments
                 .Include(c => c.User)
                 .Where(c => c.PostId == postId && c.ParentCommentId == null)
-                .OrderByDescending(c => c.CreatedAt);
+                .OrderByDescending(c => c.IsPinned)
+                .ThenByDescending(c => c.CreatedAt);
 
             var totalCount = await query.CountAsync();
             
@@ -108,6 +116,8 @@ namespace MarbookApi.Controllers
 
             var commentResponseDto = MapToDto(comment, user);
 
+            await _hubContext.Clients.All.SendAsync("CommentCreated", new { postId, comment = commentResponseDto });
+
             return CreatedAtAction(nameof(GetComments), new { postId }, commentResponseDto);
         }
 
@@ -165,6 +175,8 @@ namespace MarbookApi.Controllers
                     commentId);
             }
 
+            await _hubContext.Clients.All.SendAsync("CommentLiked", new { commentId, postId = comment.PostId, likeCount, userId, isLiked });
+
             return Ok(new { likeCount, liked = isLiked, isLiked });
         }
 
@@ -214,6 +226,8 @@ namespace MarbookApi.Controllers
                 reply.Id);
 
             var response = MapToDto(reply, user);
+
+            await _hubContext.Clients.All.SendAsync("CommentCreated", new { postId = parentComment.PostId, comment = response });
 
             return Ok(response);
         }
@@ -317,7 +331,52 @@ namespace MarbookApi.Controllers
             // Invalidate post cache so comments count updates
             await _cache.RemoveByTagAsync($"post-{comment.PostId}");
 
+            await _hubContext.Clients.All.SendAsync("CommentDeleted", new { commentId, postId = comment.PostId });
+
             return NoContent();
+        }
+
+        [HttpPost("/api/comments/{commentId:int}/Pin")]
+        public async Task<IActionResult> TogglePinComment(int commentId)
+        {
+            var comment = await _dbContext.Comments
+                .Include(c => c.Post)
+                .FirstOrDefaultAsync(c => c.Id == commentId);
+
+            if (comment == null)
+            {
+                return NotFound("Comment not found.");
+            }
+
+            var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            // Pinned by author only (Post author or comment author)
+            if (comment.Post.UserId != userId && comment.UserId != userId)
+            {
+                return Forbid();
+            }
+
+            comment.IsPinned = !comment.IsPinned;
+
+            if (comment.IsPinned)
+            {
+                // Unpin any other pinned comments on the same post
+                var otherPinned = await _dbContext.Comments
+                    .Where(c => c.PostId == comment.PostId && c.Id != commentId && c.IsPinned)
+                    .ToListAsync();
+                foreach (var o in otherPinned)
+                {
+                    o.IsPinned = false;
+                }
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            // Invalidate post cache
+            await _cache.RemoveByTagAsync($"post-{comment.PostId}");
+
+            await _hubContext.Clients.All.SendAsync("CommentPinned", new { commentId, postId = comment.PostId, isPinned = comment.IsPinned });
+
+            return Ok(new { commentId, isPinned = comment.IsPinned });
         }
 
         private async Task<Dictionary<int, int>> GetReplyCountsForPostAsync(int postId)
@@ -373,7 +432,8 @@ namespace MarbookApi.Controllers
             ParentCommentId = c.ParentCommentId,
             LikeCount = c.Likes.Count(),
             ReplyCount = 0,
-            Liked = currentUserId.HasValue && c.Likes.Any(l => l.UserId == currentUserId.Value)
+            Liked = currentUserId.HasValue && c.Likes.Any(l => l.UserId == currentUserId.Value),
+            IsPinned = c.IsPinned
         };
 
         private static CommentResponseDto MapToDto(Comment comment, User user, int likeCount = 0, int replyCount = 0, bool isLiked = false) => new()
@@ -390,7 +450,8 @@ namespace MarbookApi.Controllers
             ParentCommentId = comment.ParentCommentId,
             LikeCount = likeCount,
             ReplyCount = replyCount,
-            Liked = isLiked
+            Liked = isLiked,
+            IsPinned = comment.IsPinned
         };
     }
 }

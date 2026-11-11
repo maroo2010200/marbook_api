@@ -14,6 +14,7 @@ public class MessageDto
     public DateTime? UpdatedAt { get; set; }
     public bool IsDeleted { get; set; }
     public bool IsMine { get; set; }
+    public bool IsPinned { get; set; }
 }
 
 public class UpdateMessageDto

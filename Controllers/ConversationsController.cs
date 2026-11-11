@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
 using MarbookApi.Hubs;
@@ -349,6 +349,51 @@ public class ConversationsController(
         return NoContent();
     }
 
+    [HttpPost("{id:int}/messages/{messageId:int}/pin")]
+    public async Task<IActionResult> TogglePinMessage(int id, int messageId)
+    {
+        var currentUserId = CurrentUserId;
+
+        var message = await _dbContext.Messages
+            .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == id);
+
+        if (message == null)
+        {
+            return NotFound("Message not found.");
+        }
+
+        // Pin messages by the author only!
+        if (message.SenderUserId != currentUserId)
+        {
+            return Forbid();
+        }
+
+        message.IsPinned = !message.IsPinned;
+
+        if (message.IsPinned)
+        {
+            // Unpin any other pinned message in this conversation
+            var otherPinned = await _dbContext.Messages
+                .Where(m => m.ConversationId == id && m.Id != messageId && m.IsPinned)
+                .ToListAsync();
+            foreach (var op in otherPinned)
+            {
+                op.IsPinned = false;
+            }
+        }
+
+        await _dbContext.SaveChangesAsync();
+
+        await BroadcastToConversationAsync(id, "MessagePinned", new
+        {
+            conversationId = id,
+            messageId,
+            isPinned = message.IsPinned
+        });
+
+        return Ok(new { conversationId = id, messageId, isPinned = message.IsPinned });
+    }
+
     private async Task<MessageDto> CreateAndDispatchMessageAsync(Conversation conversation, int senderUserId, string content)
     {
         var now = DateTime.UtcNow;
@@ -445,7 +490,8 @@ public class ConversationsController(
             CreatedAt = message.CreatedAt,
             UpdatedAt = message.UpdatedAt,
             IsDeleted = message.IsDeleted,
-            IsMine = message.SenderUserId == currentUserId
+            IsMine = message.SenderUserId == currentUserId,
+            IsPinned = message.IsPinned
         };
     }
 

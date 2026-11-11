@@ -1,4 +1,4 @@
-﻿namespace MarbookApi.Models;
+namespace MarbookApi.Models;
 
 public class Message
 {
@@ -13,4 +13,5 @@ public class Message
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
     public bool IsDeleted { get; set; } = false;
+    public bool IsPinned { get; set; } = false;
 }
