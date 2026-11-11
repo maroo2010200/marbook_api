@@ -22,6 +22,9 @@ obj/
 wwwroot/uploads/
 
 # Local project documentation
+Project_Overview.md
+PROJECT_OVERVIEW.md
+Backend_Explained.md
 BACKEND_EXPLAINED.md
 PROJECT_ROADMAP.md
 AGENTS.md

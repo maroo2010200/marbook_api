@@ -17,7 +17,8 @@ public class MediaController : ControllerBase
         "posts",
         "avatars",
         "covers",
-        "comments"
+        "comments",
+        "chat"
     };
 
     public MediaController(IFileStorageService fileStorageService, ILogger<MediaController> logger)
