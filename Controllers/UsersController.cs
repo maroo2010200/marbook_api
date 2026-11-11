@@ -43,6 +43,7 @@ namespace MarbookApi.Controllers
                         CoverUrl = user.CoverUrl,
                         IsEmailVerified = user.IsEmailVerified,
                         Birthdate = user.Birthdate,
+                        IsBirthdatePrivate = user.IsBirthdatePrivate,
                         CreatedAt = user.CreatedAt,
                         UpdatedAt = user.UpdatedAt
                     };
@@ -86,6 +87,10 @@ namespace MarbookApi.Controllers
             user.Name = profileDto.Name.Trim();
             user.Bio = profileDto.Bio?.Trim();
             user.Birthdate = profileDto.Birthdate;
+            if (profileDto.IsBirthdatePrivate.HasValue)
+            {
+                user.IsBirthdatePrivate = profileDto.IsBirthdatePrivate.Value;
+            }
             user.AvatarUrl = string.IsNullOrWhiteSpace(profileDto.AvatarUrl) ? null : profileDto.AvatarUrl.Trim();
             user.CoverUrl = string.IsNullOrWhiteSpace(profileDto.CoverUrl) ? null : profileDto.CoverUrl.Trim();
             user.UpdatedAt = DateTime.UtcNow;
@@ -125,6 +130,7 @@ namespace MarbookApi.Controllers
                         user.AvatarUrl,
                         user.CoverUrl,
                         user.Birthdate,
+                        user.IsBirthdatePrivate,
                         user.CreatedAt,
                         followersCount,
                         followingCount,
@@ -147,6 +153,8 @@ namespace MarbookApi.Controllers
             var isFollowing = currentUserId.HasValue && currentUserId.Value != id
                 && await _dbContext.Follows.AnyAsync(f => f.FollowerId == currentUserId.Value && f.FolloweeId == id);
 
+            var isMe = currentUserId.HasValue && currentUserId.Value == id;
+
             var profile = new UserProfileDto
             {
                 Id = profileData.Id,
@@ -156,13 +164,14 @@ namespace MarbookApi.Controllers
                 Bio = profileData.Bio,
                 AvatarUrl = profileData.AvatarUrl,
                 CoverUrl = profileData.CoverUrl,
-                Birthdate = profileData.Birthdate,
+                Birthdate = (profileData.IsBirthdatePrivate && !isMe) ? null : profileData.Birthdate,
+                IsBirthdatePrivate = profileData.IsBirthdatePrivate,
                 CreatedAt = profileData.CreatedAt,
                 FollowersCount = profileData.FollowersCount,
                 FollowingCount = profileData.FollowingCount,
                 PostsCount = profileData.PostsCount,
                 IsFollowing = isFollowing,
-                IsMe = currentUserId.HasValue && currentUserId.Value == id
+                IsMe = isMe
             };
 
             return Ok(profile);
@@ -281,6 +290,7 @@ namespace MarbookApi.Controllers
                         CoverUrl = user.CoverUrl,
                         IsEmailVerified = user.IsEmailVerified,
                         Birthdate = user.Birthdate,
+                        IsBirthdatePrivate = user.IsBirthdatePrivate,
                         CreatedAt = user.CreatedAt,
                         UpdatedAt = user.UpdatedAt
                     };
@@ -291,6 +301,30 @@ namespace MarbookApi.Controllers
             if (response == null)
             {
                 return NotFound();
+            }
+
+            int? currentUserId = User.Identity?.IsAuthenticated == true &&
+                int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid)
+                ? uid
+                : null;
+
+            if (response.IsBirthdatePrivate && currentUserId != response.Id)
+            {
+                return Ok(new UserResponseDto
+                {
+                    Id = response.Id,
+                    Name = response.Name,
+                    Username = response.Username,
+                    Email = response.Email,
+                    Bio = response.Bio,
+                    AvatarUrl = response.AvatarUrl,
+                    CoverUrl = response.CoverUrl,
+                    IsEmailVerified = response.IsEmailVerified,
+                    Birthdate = null,
+                    IsBirthdatePrivate = true,
+                    CreatedAt = response.CreatedAt,
+                    UpdatedAt = response.UpdatedAt
+                });
             }
 
             return Ok(response);
@@ -443,6 +477,8 @@ namespace MarbookApi.Controllers
             var isFollowing = currentUserId.HasValue && currentUserId.Value != user.Id
                 && await _dbContext.Follows.AnyAsync(f => f.FollowerId == currentUserId.Value && f.FolloweeId == user.Id);
 
+            var isMe = currentUserId.HasValue && currentUserId.Value == user.Id;
+
             return new UserProfileDto
             {
                 Id = user.Id,
@@ -452,13 +488,14 @@ namespace MarbookApi.Controllers
                 Bio = user.Bio,
                 AvatarUrl = user.AvatarUrl,
                 CoverUrl = user.CoverUrl,
-                Birthdate = user.Birthdate,
+                Birthdate = (user.IsBirthdatePrivate && !isMe) ? null : user.Birthdate,
+                IsBirthdatePrivate = user.IsBirthdatePrivate,
                 CreatedAt = user.CreatedAt,
                 FollowersCount = followersCount,
                 FollowingCount = followingCount,
                 PostsCount = postsCount,
                 IsFollowing = isFollowing,
-                IsMe = currentUserId.HasValue && currentUserId.Value == user.Id
+                IsMe = isMe
             };
         }
     }

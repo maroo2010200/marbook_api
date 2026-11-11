@@ -10,7 +10,8 @@ public class UserResponseDto
     public string? AvatarUrl { get; set; }
     public string? CoverUrl { get; set; }
     public bool IsEmailVerified { get; set; }
-    public DateOnly Birthdate { get; set; }
+    public DateOnly? Birthdate { get; set; }
+    public bool IsBirthdatePrivate { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
 }

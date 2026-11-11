@@ -1,4 +1,4 @@
-﻿namespace MarbookApi.Models
+namespace MarbookApi.Models
 {
     public class User
     {
@@ -11,6 +11,7 @@
         public string? CoverUrl { get; set; }
         public string PasswordHash { get; set; } = string.Empty;
         public DateOnly Birthdate { get; set; }
+        public bool IsBirthdatePrivate { get; set; } = false;
         public bool IsEmailVerified { get; set; }
         public string? VerificationToken { get; set; }
         public DateTime? VerifiedAt { get; set; }

@@ -58,6 +58,9 @@ namespace MarbookApi.Data
                 
                 entity.Property(u => u.Birthdate)
                     .IsRequired();
+
+                entity.Property(u => u.IsBirthdatePrivate)
+                    .HasDefaultValue(false);
                 
                 entity.Property(u => u.CreatedAt)
                     .HasDefaultValueSql("NOW()");
