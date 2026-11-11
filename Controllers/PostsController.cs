@@ -531,27 +531,27 @@ namespace MarbookApi.Controllers
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            var targetPost = await _dbContext.Posts
-                .Include(p => p.User)
-                .Include(p => p.Images)
-                .Include(p => p.OriginalPost)
-                    .ThenInclude(op => op!.User)
-                .Include(p => p.OriginalPost)
-                    .ThenInclude(op => op!.Images)
-                .FirstOrDefaultAsync(p => p.Id == id);
+            var targetInfo = await _dbContext.Posts
+                .AsNoTracking()
+                .Where(p => p.Id == id)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.UserId,
+                    p.Visibility,
+                    RootPostId = p.OriginalPost != null ? p.OriginalPost.Id : p.Id,
+                    OriginalAuthorId = p.OriginalPost != null ? p.OriginalPost.UserId : p.UserId,
+                    OriginalVisibility = p.OriginalPost != null ? p.OriginalPost.Visibility : p.Visibility
+                })
+                .FirstOrDefaultAsync();
 
-            if (targetPost == null)
+            if (targetInfo == null)
             {
                 return NotFound("Post not found.");
             }
 
-            var rootPostId = targetPost.OriginalPostId ?? targetPost.Id;
-            var originalPost = targetPost.OriginalPostId.HasValue && targetPost.OriginalPost != null
-                ? targetPost.OriginalPost
-                : targetPost;
-
             var existingRepost = await _dbContext.Posts
-                .FirstOrDefaultAsync(p => p.UserId == userId && p.OriginalPostId == rootPostId);
+                .FirstOrDefaultAsync(p => p.UserId == userId && p.OriginalPostId == targetInfo.RootPostId);
 
             if (existingRepost != null)
             {
@@ -559,20 +559,22 @@ namespace MarbookApi.Controllers
                 _dbContext.Posts.Remove(existingRepost);
                 await _dbContext.SaveChangesAsync();
 
-                await _cache.RemoveByTagAsync($"post-{rootPostId}");
-                await _cache.RemoveByTagAsync($"post-{existingRepost.Id}");
-                await _cache.RemoveByTagAsync($"user-{userId}");
+                await Task.WhenAll(
+                    _cache.RemoveByTagAsync($"post-{targetInfo.RootPostId}").AsTask(),
+                    _cache.RemoveByTagAsync($"post-{existingRepost.Id}").AsTask(),
+                    _cache.RemoveByTagAsync($"user-{userId}").AsTask()
+                );
 
-                if (originalPost.UserId != userId)
+                if (targetInfo.OriginalAuthorId != userId)
                 {
                     await _notificationService.DeleteNotificationAsync(
-                        originalPost.UserId,
+                        targetInfo.OriginalAuthorId,
                         userId,
                         NotificationType.PostReposted,
-                        rootPostId);
+                        targetInfo.RootPostId);
                 }
 
-                var count = await _dbContext.Posts.CountAsync(p => p.OriginalPostId == rootPostId);
+                var count = await _dbContext.Posts.CountAsync(p => p.OriginalPostId == targetInfo.RootPostId);
 
                 await _hubContext.Clients.All.SendAsync("PostDeleted", new { postId = existingRepost.Id });
 
@@ -584,26 +586,57 @@ namespace MarbookApi.Controllers
                 });
             }
 
-            if (!await CanViewPostAsync(targetPost.Visibility, targetPost.UserId, userId))
+            if (!await CanViewPostAsync(targetInfo.Visibility, targetInfo.UserId, userId))
             {
                 return Forbid();
             }
 
-            if (originalPost.Visibility != PostVisibility.Public)
+            if (targetInfo.OriginalVisibility != PostVisibility.Public)
             {
                 return BadRequest("Only public posts can be reposted.");
             }
 
-            var user = await _dbContext.Users.FindAsync(userId);
-            if (user == null)
+            var actor = await _dbContext.Users
+                .AsNoTracking()
+                .Where(u => u.Id == userId)
+                .Select(u => new { u.Id, u.Name, u.AvatarUrl })
+                .FirstOrDefaultAsync();
+
+            if (actor == null)
             {
                 return NotFound("User not found.");
+            }
+
+            var originalData = await _dbContext.Posts
+                .AsNoTracking()
+                .Where(p => p.Id == targetInfo.RootPostId)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.Content,
+                    p.Visibility,
+                    UserName = p.User.Name,
+                    UserAvatarUrl = p.User.AvatarUrl,
+                    p.CreatedAt,
+                    p.UpdatedAt,
+                    p.UserId,
+                    LikesCount = p.Likes.Count(),
+                    CommentsCount = p.Comments.Count(),
+                    IsLiked = p.Likes.Any(l => l.UserId == userId),
+                    ImageUrls = p.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList(),
+                    ExistingRepostsCount = p.Reposts.Count()
+                })
+                .FirstOrDefaultAsync();
+
+            if (originalData == null)
+            {
+                return NotFound("Post not found.");
             }
 
             var repost = new Post
             {
                 UserId = userId,
-                OriginalPostId = rootPostId,
+                OriginalPostId = targetInfo.RootPostId,
                 Content = string.Empty,
                 Visibility = PostVisibility.Public,
                 CreatedAt = DateTime.UtcNow,
@@ -613,34 +646,36 @@ namespace MarbookApi.Controllers
             _dbContext.Posts.Add(repost);
             await _dbContext.SaveChangesAsync();
 
-            await _cache.RemoveByTagAsync($"post-{rootPostId}");
-            await _cache.RemoveByTagAsync($"user-{userId}");
+            await Task.WhenAll(
+                _cache.RemoveByTagAsync($"post-{targetInfo.RootPostId}").AsTask(),
+                _cache.RemoveByTagAsync($"user-{userId}").AsTask()
+            );
 
-            if (originalPost.UserId != userId)
+            if (originalData.UserId != userId)
             {
                 await _notificationService.CreateNotificationAsync(
-                    originalPost.UserId,
+                    originalData.UserId,
                     userId,
                     NotificationType.PostReposted,
-                    rootPostId);
+                    targetInfo.RootPostId);
             }
 
-            var newRepostsCount = await _dbContext.Posts.CountAsync(p => p.OriginalPostId == rootPostId);
+            var newRepostsCount = originalData.ExistingRepostsCount + 1;
 
             var originalPostDto = new PostResponseDto
             {
-                Id = originalPost.Id,
-                Content = originalPost.Content,
-                Visibility = originalPost.Visibility,
-                UserName = originalPost.User.Name,
-                UserAvatarUrl = originalPost.User.AvatarUrl,
-                CreatedAt = originalPost.CreatedAt,
-                UpdatedAt = originalPost.UpdatedAt,
-                UserId = originalPost.UserId,
-                LikesCount = await _dbContext.Likes.CountAsync(l => l.PostId == originalPost.Id),
-                CommentsCount = await _dbContext.Comments.CountAsync(c => c.PostId == originalPost.Id),
-                IsLiked = await _dbContext.Likes.AnyAsync(l => l.PostId == originalPost.Id && l.UserId == userId),
-                ImageUrls = originalPost.Images.OrderBy(i => i.Order).Select(i => i.Url).ToList()
+                Id = originalData.Id,
+                Content = originalData.Content,
+                Visibility = originalData.Visibility,
+                UserName = originalData.UserName,
+                UserAvatarUrl = originalData.UserAvatarUrl,
+                CreatedAt = originalData.CreatedAt,
+                UpdatedAt = originalData.UpdatedAt,
+                UserId = originalData.UserId,
+                LikesCount = originalData.LikesCount,
+                CommentsCount = originalData.CommentsCount,
+                IsLiked = originalData.IsLiked,
+                ImageUrls = originalData.ImageUrls
             };
 
             var repostDto = new PostResponseDto
@@ -648,16 +683,16 @@ namespace MarbookApi.Controllers
                 Id = repost.Id,
                 Content = repost.Content,
                 Visibility = repost.Visibility,
-                UserName = user.Name,
-                UserAvatarUrl = user.AvatarUrl,
+                UserName = actor.Name,
+                UserAvatarUrl = actor.AvatarUrl,
                 CreatedAt = repost.CreatedAt,
                 UpdatedAt = repost.UpdatedAt,
-                UserId = user.Id,
+                UserId = actor.Id,
                 LikesCount = 0,
                 CommentsCount = 0,
                 IsLiked = false,
                 ImageUrls = new List<string>(),
-                OriginalPostId = rootPostId,
+                OriginalPostId = targetInfo.RootPostId,
                 OriginalPost = originalPostDto,
                 RepostsCount = 0,
                 IsReposted = false,
