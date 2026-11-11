@@ -28,11 +28,12 @@ public class AuthController(
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)
     {
-        var emailExist = await _dbContext.Users.AnyAsync(u => u.Email == dto.Email);
+        var trimmedEmail = dto.Email.Trim();
+        var emailExist = await _dbContext.Users.AnyAsync(u => u.Email == trimmedEmail);
 
         if (emailExist)
         {
-            return Conflict("Email is already registered.");
+            return Conflict(new { message = "Email is already registered. Please check your inbox to verify or log in." });
         }
 
         var trimmedUsername = dto.Username.Trim().ToLowerInvariant();
@@ -45,27 +46,40 @@ public class AuthController(
 
         if (reservedWords.Contains(trimmedUsername))
         {
-            return BadRequest("This username is reserved. Please choose another.");
+            return BadRequest(new { message = "This username is reserved. Please choose another." });
         }
 
         var usernameExist = await _dbContext.Users.AnyAsync(u => u.Username != null && u.Username.ToLower() == trimmedUsername);
         if (usernameExist)
         {
-            return Conflict("Username is already taken.");
+            return Conflict(new { message = "Username is already taken. Please choose another." });
         }
 
         var user = new User
         {
             Name = dto.Name.Trim(),
-            Email = dto.Email.Trim(),
+            Email = trimmedEmail,
             IsEmailVerified = false,
             Username = trimmedUsername,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
-            Birthdate = dto.Birthdate
+            Birthdate = dto.Birthdate,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
         };
 
         _dbContext.Users.Add(user);
-        await _dbContext.SaveChangesAsync();
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Concurrent duplicate registration for email {Email} or username {Username}",
+                trimmedEmail, trimmedUsername);
+            return Conflict(new { message = "An account with this email or username already exists. Please check your inbox or log in." });
+        }
 
         var verificationToken = await _emailVerificationService.GenerateTokenAsync(user.Id);
 
@@ -140,13 +154,13 @@ public class AuthController(
 
         if (userId == null)
         {
-            return BadRequest("Invalid or expired verification token.");
+            return BadRequest(new { message = "Invalid or expired verification token." });
         }
 
         var user = await _dbContext.Users.FindAsync(userId);
         if (user == null)
         {
-            return BadRequest("User not found.");
+            return BadRequest(new { message = "User not found." });
         }
 
         var (Token, ExpiresAt) = _jwtService.GenerateToken(user);
@@ -178,13 +192,13 @@ public class AuthController(
     {
         if (string.IsNullOrWhiteSpace(email))
         {
-            return BadRequest("Email is required.");
+            return BadRequest(new { message = "Email is required." });
         }
 
         var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Email == email);
         if (user == null)
         {
-            return NotFound("User not found.");
+            return NotFound(new { message = "User not found." });
         }
 
         var result = await _emailVerificationService.ResendVerificationEmailAsync(user.Id, email);
