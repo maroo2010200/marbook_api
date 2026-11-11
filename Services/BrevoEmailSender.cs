@@ -25,16 +25,20 @@ public class BrevoEmailSender : IBrevoEmailSender
         var frontendBaseUrl = _configuration["Frontend:BaseUrl"]?.TrimEnd('/') ?? "http://localhost:5173";
         string frontendVerificationUrl = $"{frontendBaseUrl}/verify?token={encodedToken}";
 
+        var senderName = _configuration["Brevo:SenderName"] ?? "Marshmallow";
+        var senderEmail = _configuration["Brevo:SenderEmail"] ?? "maroo30303030@gmail.com";
+        var recipientName = email.Split('@')[0];
+
         var emailData = new
         {
             sender = new
             {
-                name = "Marshmallow",
-                email = "maroo30303030@gmail.com"
+                name = senderName,
+                email = senderEmail
             },
             to = new[]
             {
-                new { email = email, name = "Marwan" }
+                new { email = email, name = recipientName }
             },
             subject = "Verify your email on Marshmallow",
             htmlContent = $@"<h1>Welcome to Marshmallow!</h1>
@@ -69,16 +73,20 @@ public class BrevoEmailSender : IBrevoEmailSender
         var frontendBaseUrl = _configuration["Frontend:BaseUrl"]?.TrimEnd('/') ?? "http://localhost:5173";
         string frontendResetUrl = $"{frontendBaseUrl}/reset-password?token={encodedToken}";
 
+        var senderName = _configuration["Brevo:SenderName"] ?? "Marshmallow";
+        var senderEmail = _configuration["Brevo:SenderEmail"] ?? "maroo30303030@gmail.com";
+        var recipientName = email.Split('@')[0];
+
         var emailData = new
         {
             sender = new
             {
-                name = "Marshmallow",
-                email = "maroo30303030@gmail.com"
+                name = senderName,
+                email = senderEmail
             },
             to = new[]
             {
-                new { email = email, name = "Marshmallow User" }
+                new { email = email, name = recipientName }
             },
             subject = "Reset your Marshmallow password",
             htmlContent = $@"<div style='font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; background-color: #FAF4EB; border-radius: 16px; border: 1px solid #E9B97C;'>
