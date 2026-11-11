@@ -192,6 +192,7 @@ builder.Services.AddRateLimiter(options =>
 
 builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IEmailVerificationService, EmailVerificationService>();
+builder.Services.AddSingleton<IPresenceTracker, PresenceTracker>();
 
 // Bind Cloudinary settings
 builder.Services.Configure<CloudinarySettings>(
