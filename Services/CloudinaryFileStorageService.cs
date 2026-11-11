@@ -227,12 +227,15 @@ public class CloudinaryFileStorageService : IFileStorageService
                 }
 
                 var fullPath = string.Join("/", relativeSegments);
-                var publicId = Path.ChangeExtension(fullPath, null);
+                bool isVideo = fileUrl.Contains("/video/upload/", StringComparison.OrdinalIgnoreCase);
+                bool isRaw = fileUrl.Contains("/raw/upload/", StringComparison.OrdinalIgnoreCase);
+
+                // For Raw assets in Cloudinary, the public_id includes the file extension.
+                // For Image and Video assets, Cloudinary public_id omits the file extension.
+                var publicId = isRaw ? fullPath : Path.ChangeExtension(fullPath, null);
 
                 if (!string.IsNullOrEmpty(publicId))
                 {
-                    bool isVideo = fileUrl.Contains("/video/upload/", StringComparison.OrdinalIgnoreCase);
-                    bool isRaw = fileUrl.Contains("/raw/upload/", StringComparison.OrdinalIgnoreCase);
                     var deleteParams = new DeletionParams(publicId)
                     {
                         ResourceType = isVideo ? ResourceType.Video : isRaw ? ResourceType.Raw : ResourceType.Image
