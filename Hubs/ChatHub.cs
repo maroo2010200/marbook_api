@@ -1,6 +1,7 @@
 ﻿using System.Security.Claims;
 using MarbookApi.Data;
 using MarbookApi.DTOs;
+using MarbookApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
@@ -8,10 +9,47 @@ using Microsoft.EntityFrameworkCore;
 namespace MarbookApi.Hubs;
 
 [Authorize]
-public class ChatHub(AppDbContext dbContext, ILogger<ChatHub> logger) : Hub
+public class ChatHub(
+    AppDbContext dbContext,
+    IPresenceTracker presenceTracker,
+    ILogger<ChatHub> logger) : Hub
 {
     private readonly AppDbContext _dbContext = dbContext;
+    private readonly IPresenceTracker _presenceTracker = presenceTracker;
     private readonly ILogger<ChatHub> _logger = logger;
+
+    public override async Task OnConnectedAsync()
+    {
+        var userIdStr = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (int.TryParse(userIdStr, out var userId))
+        {
+            var isOnline = await _presenceTracker.UserConnected(userId, Context.ConnectionId);
+            if (isOnline)
+            {
+                await Clients.Others.SendAsync("UserPresenceChanged", new { userId, isOnline = true });
+            }
+
+            var currentOnlineUserIds = await _presenceTracker.GetOnlineUsers();
+            await Clients.Caller.SendAsync("GetOnlineUsers", currentOnlineUserIds);
+        }
+
+        await base.OnConnectedAsync();
+    }
+
+    public override async Task OnDisconnectedAsync(Exception? exception)
+    {
+        var userIdStr = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (int.TryParse(userIdStr, out var userId))
+        {
+            var isOffline = await _presenceTracker.UserDisconnected(userId, Context.ConnectionId);
+            if (isOffline)
+            {
+                await Clients.Others.SendAsync("UserPresenceChanged", new { userId, isOnline = false });
+            }
+        }
+
+        await base.OnDisconnectedAsync(exception);
+    }
 
     public async Task JoinConversation(int conversationId)
     {
