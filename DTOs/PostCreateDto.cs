@@ -10,5 +10,7 @@ public class PostCreateDto
 
     public PostVisibility Visibility { get; set; } = PostVisibility.Public;
 
+    public int? OriginalPostId { get; set; }
+
     public List<string> ImageUrls { get; set; } = new();
 }

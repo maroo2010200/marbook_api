@@ -105,6 +105,14 @@ namespace MarbookApi.Data
                     .WithMany(u => u.Posts)
                     .HasForeignKey(p => p.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(p => p.OriginalPost)
+                    .WithMany(p => p.Reposts)
+                    .HasForeignKey(p => p.OriginalPostId)
+                    .OnDelete(DeleteBehavior.SetNull);
+
+                entity.HasIndex(p => p.OriginalPostId);
+                entity.HasIndex(p => new { p.OriginalPostId, p.UserId });
             });
 
             modelBuilder.Entity<PostImage>(entity =>

@@ -383,6 +383,9 @@ namespace MarbookApi.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasDefaultValueSql("NOW()");
 
+                    b.Property<int?>("OriginalPostId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("timestamp with time zone")
@@ -398,7 +401,11 @@ namespace MarbookApi.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("OriginalPostId");
+
                     b.HasIndex("UserId");
+
+                    b.HasIndex("OriginalPostId", "UserId");
 
                     b.ToTable("Posts");
                 });
@@ -681,11 +688,18 @@ namespace MarbookApi.Migrations
 
             modelBuilder.Entity("MarbookApi.Models.Post", b =>
                 {
+                    b.HasOne("MarbookApi.Models.Post", "OriginalPost")
+                        .WithMany("Reposts")
+                        .HasForeignKey("OriginalPostId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("MarbookApi.Models.User", "User")
                         .WithMany("Posts")
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("OriginalPost");
 
                     b.Navigation("User");
                 });
@@ -722,6 +736,8 @@ namespace MarbookApi.Migrations
                     b.Navigation("Images");
 
                     b.Navigation("Likes");
+
+                    b.Navigation("Reposts");
                 });
 
             modelBuilder.Entity("MarbookApi.Models.User", b =>
