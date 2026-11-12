@@ -125,18 +125,7 @@ public class AuthController(
         {
             Token = token,
             ExpiresAt = expiresAt,
-            user = new UserResponseDto
-            {
-                Id = user.Id,
-                Name = user.Name,
-                Username = user.Username,
-                Email = user.Email,
-                IsEmailVerified = user.IsEmailVerified,
-                Birthdate = user.Birthdate,
-                IsBirthdatePrivate = user.IsBirthdatePrivate,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            }
+            user = UserResponseDto.FromUser(user, isOwner: true)
         });
     }
 
@@ -165,21 +154,7 @@ public class AuthController(
         {
             token = Token,
             expiresAt = ExpiresAt,
-            user = new UserResponseDto
-            {
-                Id = user.Id,
-                Name = user.Name,
-                Username = user.Username,
-                Email = user.Email,
-                Bio = user.Bio,
-                AvatarUrl = user.AvatarUrl,
-                CoverUrl = user.CoverUrl,
-                Birthdate = user.Birthdate,
-                IsBirthdatePrivate = user.IsBirthdatePrivate,
-                IsEmailVerified = user.IsEmailVerified,
-                CreatedAt = user.CreatedAt,
-                UpdatedAt = user.UpdatedAt
-            }
+            user = UserResponseDto.FromUser(user, isOwner: true)
         });
     }
 
