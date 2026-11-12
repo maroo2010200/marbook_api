@@ -126,6 +126,49 @@ namespace MarbookApi.Controllers
             return CreatedAtAction(nameof(GetComments), new { postId }, commentResponseDto);
         }
 
+        [HttpGet("/api/comments/{commentId:int}/Likes")]
+        [AllowAnonymous]
+        public async Task<ActionResult<PagedResult<UserSearchDto>>> GetCommentLikes(int commentId, [FromQuery] PaginationParams pagination)
+        {
+            var comment = await _dbContext.Comments
+                .AsNoTracking()
+                .Where(c => c.Id == commentId)
+                .Select(c => new
+                {
+                    c.Id,
+                    PostVisibility = c.Post.Visibility,
+                    PostAuthorId = c.Post.UserId
+                })
+                .FirstOrDefaultAsync();
+
+            if (comment == null)
+            {
+                return NotFound("Comment not found.");
+            }
+
+            var currentUserId = User.GetUserIdOrNull();
+            if (!await _dbContext.CanUserViewPostAsync(comment.PostVisibility, comment.PostAuthorId, currentUserId))
+            {
+                return NotFound("Comment not found.");
+            }
+
+            var query = _dbContext.CommentLikes
+                .AsNoTracking()
+                .Where(cl => cl.CommentId == commentId)
+                .OrderByDescending(cl => cl.CreatedAt)
+                .Select(cl => new UserSearchDto
+                {
+                    Id = cl.User.Id,
+                    Username = cl.User.Username,
+                    Name = cl.User.Name,
+                    AvatarUrl = cl.User.AvatarUrl,
+                    IsMe = currentUserId.HasValue && cl.UserId == currentUserId.Value
+                });
+
+            var result = await query.ToPagedFollowAwareResultAsync(_dbContext, currentUserId, pagination);
+            return Ok(result);
+        }
+
         [HttpPost("/api/comments/{commentId:int}/Likes")]
         public async Task<IActionResult> ToggleCommentLike(int commentId)
         {
