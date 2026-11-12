@@ -583,7 +583,7 @@ namespace MarbookApi.Controllers
 
                 await _hubContext.Clients.All.SendAsync("PostDeleted", new { postId = existingRepost.Id });
 
-                _logger.LogUserAction("PostUnreposted", userId, User.GetUsernameOrDefault(), "Post", rootPostId);
+                _logger.LogUserAction("PostUnreposted", userId, User.GetUsernameOrDefault(), "Post", targetInfo.RootPostId);
 
                 return Ok(new RepostResponseDto
                 {
@@ -708,7 +708,7 @@ namespace MarbookApi.Controllers
 
             await BroadcastPostCreatedAsync(repostDto);
 
-            _logger.LogUserAction("PostReposted", userId, user.Username, "Post", repost.Id, $"OriginalPostId={rootPostId}");
+            _logger.LogUserAction("PostReposted", userId, User.GetUsernameOrDefault(), "Post", repost.Id, $"OriginalPostId={targetInfo.RootPostId}");
 
             return Ok(new RepostResponseDto
             {
