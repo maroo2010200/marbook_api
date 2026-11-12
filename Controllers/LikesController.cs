@@ -29,6 +29,44 @@ namespace MarbookApi.Controllers
         private readonly IHubContext<NotificationHub> _hubContext = hubContext;
         private readonly ILogger _logger = logger;
 
+        [HttpGet]
+        [AllowAnonymous]
+        public async Task<ActionResult<PagedResult<UserSearchDto>>> GetPostLikes(int postId, [FromQuery] PaginationParams pagination)
+        {
+            var post = await _dbContext.Posts
+                .AsNoTracking()
+                .Where(p => p.Id == postId)
+                .Select(p => new { p.Id, p.Visibility, p.UserId })
+                .FirstOrDefaultAsync();
+
+            if (post == null)
+            {
+                return NotFound("Post not found.");
+            }
+
+            var currentUserId = User.GetUserIdOrNull();
+            if (!await _dbContext.CanUserViewPostAsync(post.Visibility, post.UserId, currentUserId))
+            {
+                return NotFound("Post not found.");
+            }
+
+            var query = _dbContext.Likes
+                .AsNoTracking()
+                .Where(l => l.PostId == postId)
+                .OrderByDescending(l => l.CreatedAt)
+                .Select(l => new UserSearchDto
+                {
+                    Id = l.User.Id,
+                    Username = l.User.Username,
+                    Name = l.User.Name,
+                    AvatarUrl = l.User.AvatarUrl,
+                    IsMe = currentUserId.HasValue && l.UserId == currentUserId.Value
+                });
+
+            var result = await query.ToPagedFollowAwareResultAsync(_dbContext, currentUserId, pagination);
+            return Ok(result);
+        }
+
         [HttpPost]
         public async Task<ActionResult<Like>> CreateLike(int postId)
         {
