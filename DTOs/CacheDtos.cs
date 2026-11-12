@@ -6,7 +6,6 @@ namespace MarbookApi.DTOs
         int Id,
         string Name,
         string? Username,
-        string Email,
         string? Bio,
         string? AvatarUrl,
         string? CoverUrl,

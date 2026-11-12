@@ -21,36 +21,7 @@ namespace MarbookApi.Controllers
         public async Task<ActionResult<UserResponseDto>> GetCurrentUser()
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
-
-            var dto = await _cache.GetOrCreateAsync(
-                $"user:{userId}",
-                async cancel =>
-                {
-                    var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancel);
-                    if (user == null)
-                    {
-                        return null;
-                    }
-
-                    return new UserResponseDto
-                    {
-                        Id = user.Id,
-                        Name = user.Name,
-                        Username = user.Username,
-                        Email = user.Email,
-                        Bio = user.Bio,
-                        AvatarUrl = user.AvatarUrl,
-                        CoverUrl = user.CoverUrl,
-                        IsEmailVerified = user.IsEmailVerified,
-                        Birthdate = user.Birthdate,
-                        IsBirthdatePrivate = user.IsBirthdatePrivate,
-                        CreatedAt = user.CreatedAt,
-                        UpdatedAt = user.UpdatedAt
-                    };
-                },
-                tags: [$"user-{userId}"],
-                cancellationToken: HttpContext.RequestAborted);
-
+            var dto = await GetCachedUserResponseAsync(userId);
             if (dto == null)
             {
                 return NotFound();
@@ -128,7 +99,6 @@ namespace MarbookApi.Controllers
                         user.Id,
                         user.Name,
                         user.Username,
-                        user.Email,
                         user.Bio,
                         user.AvatarUrl,
                         user.CoverUrl,
@@ -148,36 +118,7 @@ namespace MarbookApi.Controllers
                 return NotFound("User not found.");
             }
 
-            int? currentUserId = User.Identity?.IsAuthenticated == true &&
-                int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid)
-                ? uid
-                : null;
-
-            var isFollowing = currentUserId.HasValue && currentUserId.Value != id
-                && await _dbContext.Follows.AnyAsync(f => f.FollowerId == currentUserId.Value && f.FolloweeId == id);
-
-            var isMe = currentUserId.HasValue && currentUserId.Value == id;
-
-            var profile = new UserProfileDto
-            {
-                Id = profileData.Id,
-                Name = profileData.Name,
-                Username = profileData.Username,
-                Email = profileData.Email,
-                Bio = profileData.Bio,
-                AvatarUrl = profileData.AvatarUrl,
-                CoverUrl = profileData.CoverUrl,
-                Birthdate = (profileData.IsBirthdatePrivate && !isMe) ? null : profileData.Birthdate,
-                IsBirthdatePrivate = profileData.IsBirthdatePrivate,
-                CreatedAt = profileData.CreatedAt,
-                FollowersCount = profileData.FollowersCount,
-                FollowingCount = profileData.FollowingCount,
-                PostsCount = profileData.PostsCount,
-                IsFollowing = isFollowing,
-                IsMe = isMe
-            };
-
-            return Ok(profile);
+            return Ok(await BuildUserProfileDtoAsync(profileData, GetCurrentUserId()));
         }
 
         [HttpGet("username/{username}/profile")]
@@ -195,17 +136,20 @@ namespace MarbookApi.Controllers
         [HttpGet]
         public async Task<ActionResult<IEnumerable<UserResponseDto>>> GetUsers()
         {
+            int? currentUserId = GetCurrentUserId();
+
             var users = await _dbContext.Users.Select(u => new UserResponseDto
             {
                 Id = u.Id,
                 Name = u.Name,
                 Username = u.Username,
-                Email = u.Email,
+                Email = null,
                 Bio = u.Bio,
                 AvatarUrl = u.AvatarUrl,
                 CoverUrl = u.CoverUrl,
-                IsEmailVerified = u.IsEmailVerified,
-                Birthdate = u.Birthdate,
+                IsEmailVerified = false,
+                Birthdate = (u.IsBirthdatePrivate && currentUserId != u.Id) ? null : u.Birthdate,
+                IsBirthdatePrivate = u.IsBirthdatePrivate,
                 CreatedAt = u.CreatedAt,
                 UpdatedAt = u.UpdatedAt
             }).ToListAsync();
@@ -222,10 +166,7 @@ namespace MarbookApi.Controllers
             }
 
             var term = search.Trim();
-            int? currentUserId = User.Identity?.IsAuthenticated == true &&
-                int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid)
-                ? uid
-                : null;
+            int? currentUserId = GetCurrentUserId();
 
             var query = _dbContext.Users
                 .Where(u =>
@@ -271,66 +212,13 @@ namespace MarbookApi.Controllers
         [HttpGet("{id:int}")]
         public async Task<ActionResult<UserResponseDto>> GetUser(int id)
         {
-            var response = await _cache.GetOrCreateAsync(
-                $"user:{id}",
-                async cancel =>
-                {
-                    var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == id, cancel);
-
-                    if (user == null)
-                    {
-                        return null;
-                    }
-
-                    return new UserResponseDto
-                    {
-                        Id = user.Id,
-                        Name = user.Name,
-                        Username = user.Username,
-                        Email = user.Email,
-                        Bio = user.Bio,
-                        AvatarUrl = user.AvatarUrl,
-                        CoverUrl = user.CoverUrl,
-                        IsEmailVerified = user.IsEmailVerified,
-                        Birthdate = user.Birthdate,
-                        IsBirthdatePrivate = user.IsBirthdatePrivate,
-                        CreatedAt = user.CreatedAt,
-                        UpdatedAt = user.UpdatedAt
-                    };
-                },
-                tags: [$"user-{id}"],
-                cancellationToken: HttpContext.RequestAborted);
-
+            var response = await GetCachedUserResponseAsync(id);
             if (response == null)
             {
                 return NotFound();
             }
 
-            int? currentUserId = User.Identity?.IsAuthenticated == true &&
-                int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid)
-                ? uid
-                : null;
-
-            if (response.IsBirthdatePrivate && currentUserId != response.Id)
-            {
-                return Ok(new UserResponseDto
-                {
-                    Id = response.Id,
-                    Name = response.Name,
-                    Username = response.Username,
-                    Email = response.Email,
-                    Bio = response.Bio,
-                    AvatarUrl = response.AvatarUrl,
-                    CoverUrl = response.CoverUrl,
-                    IsEmailVerified = response.IsEmailVerified,
-                    Birthdate = null,
-                    IsBirthdatePrivate = true,
-                    CreatedAt = response.CreatedAt,
-                    UpdatedAt = response.UpdatedAt
-                });
-            }
-
-            return Ok(response);
+            return Ok(response.ForViewer(GetCurrentUserId() == response.Id));
         }
 
         [HttpPost]
@@ -471,32 +359,72 @@ namespace MarbookApi.Controllers
             return Ok(new { message = "Account deleted successfully." });
         }
 
+        private int? GetCurrentUserId()
+        {
+            return User.Identity?.IsAuthenticated == true &&
+                int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid)
+                ? uid
+                : null;
+        }
+
+        private Task<UserResponseDto?> GetCachedUserResponseAsync(int userId)
+        {
+            return _cache.GetOrCreateAsync(
+                $"user:{userId}",
+                async cancel =>
+                {
+                    var user = await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancel);
+                    return user == null ? null : UserResponseDto.FromUser(user, isOwner: true);
+                },
+                tags: [$"user-{userId}"],
+                cancellationToken: HttpContext.RequestAborted).AsTask();
+        }
+
         private async Task<UserProfileDto> BuildUserProfileDto(User user, int? currentUserId)
         {
             var followersCount = await _dbContext.Follows.CountAsync(f => f.FolloweeId == user.Id);
             var followingCount = await _dbContext.Follows.CountAsync(f => f.FollowerId == user.Id);
             var postsCount = await _dbContext.Posts.CountAsync(p => p.UserId == user.Id);
 
-            var isFollowing = currentUserId.HasValue && currentUserId.Value != user.Id
-                && await _dbContext.Follows.AnyAsync(f => f.FollowerId == currentUserId.Value && f.FolloweeId == user.Id);
+            var data = new CachedUserProfileData(
+                user.Id,
+                user.Name,
+                user.Username,
+                user.Bio,
+                user.AvatarUrl,
+                user.CoverUrl,
+                user.Birthdate,
+                user.IsBirthdatePrivate,
+                user.CreatedAt,
+                followersCount,
+                followingCount,
+                postsCount
+            );
 
-            var isMe = currentUserId.HasValue && currentUserId.Value == user.Id;
+            return await BuildUserProfileDtoAsync(data, currentUserId);
+        }
+
+        private async Task<UserProfileDto> BuildUserProfileDtoAsync(CachedUserProfileData profileData, int? currentUserId)
+        {
+            var isFollowing = currentUserId.HasValue && currentUserId.Value != profileData.Id
+                && await _dbContext.Follows.AnyAsync(f => f.FollowerId == currentUserId.Value && f.FolloweeId == profileData.Id);
+
+            var isMe = currentUserId.HasValue && currentUserId.Value == profileData.Id;
 
             return new UserProfileDto
             {
-                Id = user.Id,
-                Name = user.Name,
-                Username = user.Username,
-                Email = user.Email,
-                Bio = user.Bio,
-                AvatarUrl = user.AvatarUrl,
-                CoverUrl = user.CoverUrl,
-                Birthdate = (user.IsBirthdatePrivate && !isMe) ? null : user.Birthdate,
-                IsBirthdatePrivate = user.IsBirthdatePrivate,
-                CreatedAt = user.CreatedAt,
-                FollowersCount = followersCount,
-                FollowingCount = followingCount,
-                PostsCount = postsCount,
+                Id = profileData.Id,
+                Name = profileData.Name,
+                Username = profileData.Username,
+                Bio = profileData.Bio,
+                AvatarUrl = profileData.AvatarUrl,
+                CoverUrl = profileData.CoverUrl,
+                Birthdate = (profileData.IsBirthdatePrivate && !isMe) ? null : profileData.Birthdate,
+                IsBirthdatePrivate = profileData.IsBirthdatePrivate,
+                CreatedAt = profileData.CreatedAt,
+                FollowersCount = profileData.FollowersCount,
+                FollowingCount = profileData.FollowingCount,
+                PostsCount = profileData.PostsCount,
                 IsFollowing = isFollowing,
                 IsMe = isMe
             };
