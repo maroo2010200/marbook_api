@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Mail;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -126,8 +128,36 @@ public class BrevoEmailSender : IBrevoEmailSender
 
     private async Task SendEmailAsync(string toEmail, string subject, string htmlContent)
     {
+        var smtpPassword = _configuration["Smtp:AppPassword"];
+        var smtpEmail = _configuration["Smtp:SenderEmail"] ?? "maroo30303030@gmail.com";
+        var smtpHost = _configuration["Smtp:Host"] ?? "smtp.gmail.com";
+        var smtpPort = int.TryParse(_configuration["Smtp:Port"], out var port) ? port : 587;
+
+        if (!string.IsNullOrWhiteSpace(smtpPassword))
+        {
+            // Send via Google SMTP (Direct Google DKIM signature -> Lands in Primary Inbox)
+            using var client = new SmtpClient(smtpHost, smtpPort)
+            {
+                EnableSsl = true,
+                Credentials = new NetworkCredential(smtpEmail, smtpPassword.Trim())
+            };
+
+            using var mail = new MailMessage
+            {
+                From = new MailAddress(smtpEmail, "Marshmallow"),
+                Subject = subject,
+                Body = htmlContent,
+                IsBodyHtml = true
+            };
+            mail.To.Add(toEmail);
+
+            await client.SendMailAsync(mail);
+            return;
+        }
+
+        // Fallback to Brevo API if Smtp:AppPassword is not set
         var apiKey = _configuration["Brevo:ApiKey"]
-                       ?? throw new InvalidOperationException("Brevo API key is not configured.");
+                       ?? throw new InvalidOperationException("Neither SMTP nor Brevo API is configured.");
 
         var emailData = new
         {
