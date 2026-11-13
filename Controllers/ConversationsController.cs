@@ -173,7 +173,8 @@ public class ConversationsController(
     [HttpGet("{id:int}/messages")]
     public async Task<ActionResult<PagedResult<MessageDto>>> GetMessages(
         int id,
-        [FromQuery] PaginationParams pagination)
+        [FromQuery] PaginationParams pagination,
+        [FromQuery] string? search)
     {
         var currentUserId = CurrentUserId;
 
@@ -188,6 +189,12 @@ public class ConversationsController(
         var query = _dbContext.Messages
             .Where(m => m.ConversationId == id);
 
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim();
+            query = query.Where(m => !m.IsDeleted && EF.Functions.ILike(m.Content, $"%{term}%"));
+        }
+
         var totalCount = await query.CountAsync();
         var skip = (pagination.PageNumber - 1) * pagination.PageSize;
 
@@ -198,7 +205,10 @@ public class ConversationsController(
             .Include(m => m.SenderUser)
             .ToListAsync();
 
-        rawMessages.Reverse();
+        if (string.IsNullOrWhiteSpace(search))
+        {
+            rawMessages.Reverse();
+        }
 
         var items = rawMessages.Select(m => MapToDto(m, currentUserId)).ToList();
 
@@ -209,6 +219,32 @@ public class ConversationsController(
             PageNumber = pagination.PageNumber,
             PageSize = pagination.PageSize
         });
+    }
+
+    [HttpGet("{id:int}/media")]
+    public async Task<ActionResult<List<MessageDto>>> GetSharedMedia(int id)
+    {
+        var currentUserId = CurrentUserId;
+
+        var isParticipant = await _dbContext.ConversationParticipants
+            .AnyAsync(cp => cp.ConversationId == id && cp.UserId == currentUserId);
+
+        if (!isParticipant)
+        {
+            return Forbid();
+        }
+
+        var rawMessages = await _dbContext.Messages
+            .Where(m => m.ConversationId == id && !m.IsDeleted &&
+                (EF.Functions.ILike(m.Content, "%http://%") || EF.Functions.ILike(m.Content, "%https://%")))
+            .OrderByDescending(m => m.CreatedAt)
+            .Take(300)
+            .Include(m => m.SenderUser)
+            .ToListAsync();
+
+        var items = rawMessages.Select(m => MapToDto(m, currentUserId)).ToList();
+
+        return Ok(items);
     }
 
     [HttpPost("{id:int}/messages")]
