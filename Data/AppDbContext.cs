@@ -18,6 +18,7 @@ namespace MarbookApi.Data
         public DbSet<Conversation> Conversations { get; set; }
         public DbSet<ConversationParticipant> ConversationParticipants { get; set; }
         public DbSet<Message> Messages { get; set; }
+        public DbSet<MessageReaction> MessageReactions { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -337,6 +338,36 @@ namespace MarbookApi.Data
                 entity.HasOne(m => m.SenderUser)
                     .WithMany(u => u.SentMessages)
                     .HasForeignKey(m => m.SenderUserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(m => m.ReplyToMessage)
+                    .WithMany()
+                    .HasForeignKey(m => m.ReplyToMessageId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+
+            modelBuilder.Entity<MessageReaction>(entity =>
+            {
+                entity.HasKey(r => r.Id);
+
+                entity.Property(r => r.Emoji)
+                    .IsRequired()
+                    .HasMaxLength(32);
+
+                entity.Property(r => r.CreatedAt)
+                    .HasDefaultValueSql("NOW()");
+
+                entity.HasIndex(r => new { r.MessageId, r.UserId })
+                    .IsUnique();
+
+                entity.HasOne(r => r.Message)
+                    .WithMany(m => m.Reactions)
+                    .HasForeignKey(r => r.MessageId)
+                    .OnDelete(DeleteBehavior.Cascade);
+
+                entity.HasOne(r => r.User)
+                    .WithMany()
+                    .HasForeignKey(r => r.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
             });
         }

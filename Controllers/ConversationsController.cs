@@ -203,6 +203,10 @@ public class ConversationsController(
             .Skip(skip)
             .Take(pagination.PageSize)
             .Include(m => m.SenderUser)
+            .Include(m => m.ReplyToMessage)
+                .ThenInclude(rm => rm!.SenderUser)
+            .Include(m => m.Reactions)
+                .ThenInclude(r => r.User)
             .ToListAsync();
 
         if (string.IsNullOrWhiteSpace(search))
@@ -240,6 +244,10 @@ public class ConversationsController(
             .OrderByDescending(m => m.CreatedAt)
             .Take(300)
             .Include(m => m.SenderUser)
+            .Include(m => m.ReplyToMessage)
+                .ThenInclude(rm => rm!.SenderUser)
+            .Include(m => m.Reactions)
+                .ThenInclude(r => r.User)
             .ToListAsync();
 
         var items = rawMessages.Select(m => MapToDto(m, currentUserId)).ToList();
@@ -269,7 +277,7 @@ public class ConversationsController(
             return BadRequest("Message content cannot be empty.");
         }
 
-        var messageDto = await CreateAndDispatchMessageAsync(conversation, currentUserId, dto.Content.Trim());
+        var messageDto = await CreateAndDispatchMessageAsync(conversation, currentUserId, dto.Content.Trim(), dto.ReplyToMessageId);
 
         return CreatedAtAction(nameof(GetMessages), new { id = conversation.Id }, messageDto);
     }
@@ -375,6 +383,14 @@ public class ConversationsController(
         message.Content = "This message was deleted";
         message.UpdatedAt = now;
 
+        var reactions = await _dbContext.MessageReactions
+            .Where(r => r.MessageId == messageId)
+            .ToListAsync();
+        if (reactions.Count > 0)
+        {
+            _dbContext.MessageReactions.RemoveRange(reactions);
+        }
+
         await _dbContext.SaveChangesAsync();
 
         var deletePayload = new
@@ -442,9 +458,104 @@ public class ConversationsController(
         return Ok(new { conversationId = id, messageId, isPinned = message.IsPinned });
     }
 
-    private async Task<MessageDto> CreateAndDispatchMessageAsync(Conversation conversation, int senderUserId, string content)
+    [HttpPost("{id:int}/messages/{messageId:int}/reactions")]
+    public async Task<ActionResult<List<MessageReactionItemDto>>> ToggleReaction(
+        int id,
+        int messageId,
+        [FromBody] ToggleReactionDto dto)
+    {
+        var currentUserId = CurrentUserId;
+
+        var isParticipant = await _dbContext.ConversationParticipants
+            .AnyAsync(cp => cp.ConversationId == id && cp.UserId == currentUserId);
+
+        if (!isParticipant)
+        {
+            return Forbid();
+        }
+
+        var message = await _dbContext.Messages
+            .FirstOrDefaultAsync(m => m.Id == messageId && m.ConversationId == id);
+
+        if (message == null)
+        {
+            return NotFound("Message not found.");
+        }
+
+        if (message.IsDeleted)
+        {
+            return BadRequest("Cannot react to a deleted message.");
+        }
+
+        var emoji = dto.Emoji?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(emoji))
+        {
+            return BadRequest("Emoji cannot be empty.");
+        }
+
+        var existing = await _dbContext.MessageReactions
+            .FirstOrDefaultAsync(r => r.MessageId == messageId && r.UserId == currentUserId);
+
+        if (existing != null && existing.Emoji == emoji)
+        {
+            // Same emoji toggled -> remove
+            _dbContext.MessageReactions.Remove(existing);
+        }
+        else if (existing != null)
+        {
+            // Different emoji -> update
+            existing.Emoji = emoji;
+            existing.CreatedAt = DateTime.UtcNow;
+        }
+        else
+        {
+            // Add new reaction
+            _dbContext.MessageReactions.Add(new MessageReaction
+            {
+                MessageId = messageId,
+                UserId = currentUserId,
+                Emoji = emoji,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        await _dbContext.SaveChangesAsync();
+
+        var updatedReactions = await _dbContext.MessageReactions
+            .Where(r => r.MessageId == messageId)
+            .Include(r => r.User)
+            .OrderBy(r => r.CreatedAt)
+            .Select(r => new MessageReactionItemDto
+            {
+                UserId = r.UserId,
+                UserName = r.User.Name,
+                Emoji = r.Emoji
+            })
+            .ToListAsync();
+
+        await BroadcastToConversationAsync(id, "MessageReactionUpdated", new
+        {
+            conversationId = id,
+            messageId,
+            reactions = updatedReactions
+        });
+
+        _logger.LogUserAction("MessageReactionToggled", currentUserId, User.GetUsernameOrDefault(), "Message", messageId, $"Emoji={emoji}");
+
+        return Ok(updatedReactions);
+    }
+
+    private async Task<MessageDto> CreateAndDispatchMessageAsync(Conversation conversation, int senderUserId, string content, int? replyToMessageId = null)
     {
         var now = DateTime.UtcNow;
+
+        Message? replyToMessage = null;
+        if (replyToMessageId.HasValue)
+        {
+            replyToMessage = await _dbContext.Messages
+                .Include(m => m.SenderUser)
+                .FirstOrDefaultAsync(m => m.Id == replyToMessageId.Value && m.ConversationId == conversation.Id);
+        }
 
         var message = new Message
         {
@@ -453,7 +564,9 @@ public class ConversationsController(
             Content = content,
             CreatedAt = now,
             UpdatedAt = null,
-            IsDeleted = false
+            IsDeleted = false,
+            ReplyToMessageId = replyToMessage?.Id,
+            ReplyToMessage = replyToMessage
         };
 
         _dbContext.Messages.Add(message);
@@ -528,6 +641,8 @@ public class ConversationsController(
     private static MessageDto MapToDto(Message message, int currentUserId, User? senderUser = null)
     {
         var sender = senderUser ?? message.SenderUser;
+        var replyTo = message.ReplyToMessage;
+
         return new MessageDto
         {
             Id = message.Id,
@@ -540,7 +655,21 @@ public class ConversationsController(
             UpdatedAt = message.UpdatedAt,
             IsDeleted = message.IsDeleted,
             IsMine = message.SenderUserId == currentUserId,
-            IsPinned = message.IsPinned
+            IsPinned = message.IsPinned,
+            ReplyTo = replyTo == null ? null : new MessageReplyDto
+            {
+                Id = replyTo.Id,
+                SenderUserId = replyTo.SenderUserId,
+                SenderName = replyTo.SenderUser?.Name ?? "User",
+                Content = replyTo.IsDeleted ? "This message was deleted" : replyTo.Content,
+                IsDeleted = replyTo.IsDeleted
+            },
+            Reactions = message.Reactions?.Select(r => new MessageReactionItemDto
+            {
+                UserId = r.UserId,
+                UserName = r.User?.Name ?? "User",
+                Emoji = r.Emoji
+            }).ToList() ?? new List<MessageReactionItemDto>()
         };
     }
 

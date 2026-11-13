@@ -280,6 +280,9 @@ namespace MarbookApi.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
+                    b.Property<int?>("ReplyToMessageId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("SenderUserId")
                         .HasColumnType("integer");
 
@@ -288,11 +291,47 @@ namespace MarbookApi.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ReplyToMessageId");
+
                     b.HasIndex("SenderUserId");
 
                     b.HasIndex("ConversationId", "CreatedAt");
 
                     b.ToTable("Messages");
+                });
+
+            modelBuilder.Entity("MarbookApi.Models.MessageReaction", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasDefaultValueSql("NOW()");
+
+                    b.Property<string>("Emoji")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<int>("MessageId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("MessageId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("MessageReactions");
                 });
 
             modelBuilder.Entity("MarbookApi.Models.Notification", b =>
@@ -651,6 +690,11 @@ namespace MarbookApi.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("MarbookApi.Models.Message", "ReplyToMessage")
+                        .WithMany()
+                        .HasForeignKey("ReplyToMessageId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("MarbookApi.Models.User", "SenderUser")
                         .WithMany("SentMessages")
                         .HasForeignKey("SenderUserId")
@@ -659,7 +703,28 @@ namespace MarbookApi.Migrations
 
                     b.Navigation("Conversation");
 
+                    b.Navigation("ReplyToMessage");
+
                     b.Navigation("SenderUser");
+                });
+
+            modelBuilder.Entity("MarbookApi.Models.MessageReaction", b =>
+                {
+                    b.HasOne("MarbookApi.Models.Message", "Message")
+                        .WithMany("Reactions")
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("MarbookApi.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Message");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("MarbookApi.Models.Notification", b =>
@@ -747,6 +812,11 @@ namespace MarbookApi.Migrations
                     b.Navigation("Messages");
 
                     b.Navigation("Participants");
+                });
+
+            modelBuilder.Entity("MarbookApi.Models.Message", b =>
+                {
+                    b.Navigation("Reactions");
                 });
 
             modelBuilder.Entity("MarbookApi.Models.Post", b =>
