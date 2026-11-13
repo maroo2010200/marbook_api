@@ -369,8 +369,11 @@ public class ConversationsController(
             return NotFound("Message not found.");
         }
 
-        // Pin messages by the author only!
-        if (message.SenderUserId != currentUserId)
+        // Any conversation participant can pin or unpin messages in this conversation
+        var isParticipant = await _dbContext.ConversationParticipants
+            .AnyAsync(cp => cp.ConversationId == id && cp.UserId == currentUserId);
+
+        if (!isParticipant)
         {
             return Forbid();
         }
