@@ -59,23 +59,69 @@ public class BrevoEmailSender : IBrevoEmailSender
         string ctaUrl,
         string footerText)
     {
-        return $@"<div style='font-family: -apple-system, BlinkMacSystemFont, ""Segoe UI"", Roboto, Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; background-color: #FAF4EB; border-radius: 16px; border: 1px solid #E9B97C;'>
-                                <div style='text-align: center; margin-bottom: 20px;'>
-                                    <h1 style='color: #451A03; font-size: 24px; margin: 0 0 8px 0;'>{heading}</h1>
-                                    <p style='color: #78350F; font-size: 14px; margin: 0;'>{subtitle}</p>
-                                </div>
-                                <div style='background-color: #FFFFFF; padding: 24px; border-radius: 12px; border: 1px solid #E9B97C; text-align: center;'>
-                                    <p style='color: #451A03; font-size: 14px; line-height: 1.6; margin: 0 0 20px 0;'>
-                                        {bodyHtml}
-                                    </p>
-                                    <a href='{ctaUrl}' style='display: inline-block; padding: 12px 28px; background-color: #C96B32; color: #FFFFFF; text-decoration: none; font-weight: bold; font-size: 15px; border-radius: 9999px; box-shadow: 0 4px 12px rgba(201, 107, 50, 0.35);'>
-                                        {ctaLabel}
-                                    </a>
-                                </div>
-                                <p style='color: #92400E; font-size: 12px; text-align: center; margin: 20px 0 0 0;'>
-                                    {footerText}
+        return $@"<!DOCTYPE html>
+<html lang=""en"">
+<head>
+    <meta charset=""UTF-8"">
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <meta http-equiv=""X-UA-Compatible"" content=""IE=edge"">
+    <title>{heading}</title>
+</head>
+<body style=""margin: 0; padding: 0; background-color: #FAF4EB; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;"">
+    <table role=""presentation"" width=""100%"" cellspacing=""0"" cellpadding=""0"" border=""0"" style=""background-color: #FAF4EB; padding: 24px 12px;"">
+        <tr>
+            <td align=""center"">
+                <table role=""presentation"" width=""100%"" cellspacing=""0"" cellpadding=""0"" border=""0"" style=""max-width: 520px; background-color: #FAF4EB; border-radius: 16px; border: 1px solid #E9B97C; padding: 24px;"">
+                    <!-- Header -->
+                    <tr>
+                        <td align=""center"" style=""padding-bottom: 20px;"">
+                            <h1 style=""color: #451A03; font-size: 24px; margin: 0 0 8px 0; font-weight: 700;"">{heading}</h1>
+                            <p style=""color: #78350F; font-size: 14px; margin: 0;"">{subtitle}</p>
+                        </td>
+                    </tr>
+                    <!-- Card Body -->
+                    <tr>
+                        <td style=""background-color: #FFFFFF; padding: 28px 24px; border-radius: 12px; border: 1px solid #E9B97C; text-align: center;"">
+                            <p style=""color: #451A03; font-size: 15px; line-height: 1.6; margin: 0 0 24px 0;"">
+                                {bodyHtml}
+                            </p>
+                            <!-- Bulletproof Button -->
+                            <table role=""presentation"" cellspacing=""0"" cellpadding=""0"" border=""0"" align=""center"">
+                                <tr>
+                                    <td align=""center"" style=""border-radius: 9999px; background-color: #C96B32;"">
+                                        <a href=""{ctaUrl}"" target=""_blank"" style=""display: inline-block; padding: 14px 32px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 15px; font-weight: bold; color: #FFFFFF; text-decoration: none; border-radius: 9999px; background-color: #C96B32; border: 1px solid #C96B32;"">
+                                            {ctaLabel}
+                                        </a>
+                                    </td>
+                                </tr>
+                            </table>
+                            <!-- Fallback Link -->
+                            <div style=""margin-top: 24px; padding-top: 18px; border-top: 1px dashed #E9B97C; text-align: left;"">
+                                <p style=""color: #78350F; font-size: 12px; line-height: 1.5; margin: 0 0 6px 0;"">
+                                    If the button doesn't work, copy and paste this link into your browser:
                                 </p>
-                             </div>";
+                                <p style=""margin: 0; word-break: break-all;"">
+                                    <a href=""{ctaUrl}"" target=""_blank"" style=""color: #C96B32; font-size: 12px; text-decoration: underline;"">
+                                        {ctaUrl}
+                                    </a>
+                                </p>
+                            </div>
+                        </td>
+                    </tr>
+                    <!-- Footer -->
+                    <tr>
+                        <td align=""center"" style=""padding-top: 20px;"">
+                            <p style=""color: #92400E; font-size: 12px; margin: 0; line-height: 1.4;"">
+                                {footerText}
+                            </p>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>";
     }
 
     private async Task SendEmailAsync(string toEmail, string subject, string htmlContent)
