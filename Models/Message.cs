@@ -14,4 +14,9 @@ public class Message
     public DateTime? UpdatedAt { get; set; }
     public bool IsDeleted { get; set; } = false;
     public bool IsPinned { get; set; } = false;
+
+    public int? ReplyToMessageId { get; set; }
+    public Message? ReplyToMessage { get; set; }
+
+    public ICollection<MessageReaction> Reactions { get; set; } = new List<MessageReaction>();
 }

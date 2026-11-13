@@ -15,6 +15,31 @@ public class MessageDto
     public bool IsDeleted { get; set; }
     public bool IsMine { get; set; }
     public bool IsPinned { get; set; }
+    public MessageReplyDto? ReplyTo { get; set; }
+    public List<MessageReactionItemDto> Reactions { get; set; } = new();
+}
+
+public class MessageReplyDto
+{
+    public int Id { get; set; }
+    public int SenderUserId { get; set; }
+    public string SenderName { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
+    public bool IsDeleted { get; set; }
+}
+
+public class MessageReactionItemDto
+{
+    public int UserId { get; set; }
+    public string UserName { get; set; } = string.Empty;
+    public string Emoji { get; set; } = string.Empty;
+}
+
+public class ToggleReactionDto
+{
+    [Required]
+    [StringLength(32, MinimumLength = 1)]
+    public string Emoji { get; set; } = string.Empty;
 }
 
 public class UpdateMessageDto
@@ -39,6 +64,8 @@ public class SendMessageDto
     [Required]
     [StringLength(2000, MinimumLength = 1)]
     public string Content { get; set; } = string.Empty;
+
+    public int? ReplyToMessageId { get; set; }
 }
 
 public class StartConversationDto
