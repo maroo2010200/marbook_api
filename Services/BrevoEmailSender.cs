@@ -138,39 +138,57 @@ public class BrevoEmailSender : IBrevoEmailSender
         var smtpHost = _configuration["Smtp:Host"] ?? "smtp.gmail.com";
         var smtpPort = int.TryParse(_configuration["Smtp:Port"], out var port) ? port : 587;
 
-        if (!string.IsNullOrWhiteSpace(smtpPassword))
+        var isRender = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("RENDER"));
+
+        // Render's free tier blocks outbound SMTP ports (25, 465, 587).
+        // If running on Render, skip blocked SMTP directly and use Brevo REST API over HTTPS (Port 443).
+        if (!isRender && !string.IsNullOrWhiteSpace(smtpPassword))
         {
-            var cleanPassword = smtpPassword.Replace(" ", "").Trim();
-            _logger.LogInformation(
-                "Dispatching email to {Email} via Google Direct SMTP ({Host}:{Port})...",
-                toEmail, smtpHost, smtpPort);
-
-            // Send via Google SMTP (Direct Google DKIM signature -> Lands in Primary Inbox)
-            using var client = new SmtpClient(smtpHost, smtpPort)
+            try
             {
-                EnableSsl = true,
-                Credentials = new NetworkCredential(smtpEmail, cleanPassword)
-            };
+                var cleanPassword = smtpPassword.Replace(" ", "").Trim();
+                _logger.LogInformation(
+                    "Dispatching email to {Email} via Google Direct SMTP ({Host}:{Port})...",
+                    toEmail, smtpHost, smtpPort);
 
-            using var mail = new MailMessage
+                // Send via Google SMTP (Direct Google DKIM signature -> Lands in Primary Inbox)
+                using var client = new SmtpClient(smtpHost, smtpPort)
+                {
+                    EnableSsl = true,
+                    Credentials = new NetworkCredential(smtpEmail, cleanPassword),
+                    Timeout = 5000
+                };
+
+                using var mail = new MailMessage
+                {
+                    From = new MailAddress(smtpEmail, "Marshmallow"),
+                    Subject = subject,
+                    Body = htmlContent,
+                    IsBodyHtml = true
+                };
+                mail.To.Add(toEmail);
+
+                // Use WaitAsync to strictly enforce timeout against network/firewall hangs
+                await client.SendMailAsync(mail).WaitAsync(TimeSpan.FromSeconds(5));
+                _logger.LogInformation("Email successfully delivered to {Email} via Google SMTP.", toEmail);
+                return;
+            }
+            catch (Exception ex)
             {
-                From = new MailAddress(smtpEmail, "Marshmallow"),
-                Subject = subject,
-                Body = htmlContent,
-                IsBodyHtml = true
-            };
-            mail.To.Add(toEmail);
-
-            await client.SendMailAsync(mail);
-            _logger.LogInformation("Email successfully delivered to {Email} via Google SMTP.", toEmail);
-            return;
+                _logger.LogWarning(
+                    ex,
+                    "Google SMTP failed or timed out for {Email}. Falling back to Brevo HTTP API...",
+                    toEmail);
+            }
         }
 
-        _logger.LogWarning(
-            "Smtp:AppPassword is not configured. Falling back to Brevo API for {Email} (may land in spam without custom domain DKIM)...",
+        _logger.LogInformation(
+            isRender
+                ? "Running on Render: SMTP port 587 blocked by cloud firewall. Using Brevo HTTP API (Port 443) for {Email}..."
+                : "Dispatching email to {Email} via Brevo HTTP API (Port 443)...",
             toEmail);
 
-        // Fallback to Brevo API if Smtp:AppPassword is not set
+        // Fallback to Brevo API if Smtp:AppPassword is not set, or on Render, or if SMTP failed
         var apiKey = _configuration["Brevo:ApiKey"]
                        ?? throw new InvalidOperationException("Neither SMTP nor Brevo API is configured.");
 
@@ -202,5 +220,7 @@ public class BrevoEmailSender : IBrevoEmailSender
             var error = await response.Content.ReadAsStringAsync();
             throw new Exception($"Brevo API error: {error}");
         }
+
+        _logger.LogInformation("Email successfully delivered to {Email} via Brevo HTTP API.", toEmail);
     }
 }
