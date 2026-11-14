@@ -23,6 +23,7 @@ public class NotificationsController(AppDbContext dbContext) : ControllerBase
 
         var query = _dbContext.Notifications
             .Include(n => n.ActorUser)
+            .Include(n => n.TargetComment)
             .Where(n => n.RecipientUserId == userId);
 
         if (unreadOnly == true)
@@ -47,6 +48,7 @@ public class NotificationsController(AppDbContext dbContext) : ControllerBase
                 Type = n.Type.ToString(),
                 TargetPostId = n.TargetPostId,
                 TargetCommentId = n.TargetCommentId,
+                ParentCommentId = n.TargetComment != null ? n.TargetComment.ParentCommentId : null,
                 IsRead = n.IsRead,
                 CreatedAt = n.CreatedAt
             })

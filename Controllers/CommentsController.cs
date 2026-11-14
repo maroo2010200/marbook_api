@@ -284,6 +284,36 @@ namespace MarbookApi.Controllers
             return Ok(response);
         }
 
+        [HttpGet("/api/comments/{commentId:int}")]
+        [AllowAnonymous]
+        public async Task<ActionResult<CommentResponseDto>> GetComment(int commentId)
+        {
+            int? currentUserId = User.Identity?.IsAuthenticated == true && int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier), out var uid)
+                ? uid
+                : null;
+
+            var comment = await _dbContext.Comments
+                .Include(c => c.User)
+                .Where(c => c.Id == commentId)
+                .Select(ProjectToDto(currentUserId))
+                .FirstOrDefaultAsync();
+
+            if (comment == null)
+            {
+                return NotFound();
+            }
+
+            var postId = await _dbContext.Comments
+                .Where(c => c.Id == commentId)
+                .Select(c => c.PostId)
+                .FirstOrDefaultAsync();
+
+            var replyCounts = await GetReplyCountsForPostAsync(postId);
+            comment.ReplyCount = replyCounts.GetValueOrDefault(comment.Id, 0);
+
+            return Ok(comment);
+        }
+
         [HttpGet("/api/comments/{commentId:int}/Replies")]
         [AllowAnonymous]
         public async Task<ActionResult<List<CommentResponseDto>>> GetReplies(int commentId)

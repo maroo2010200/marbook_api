@@ -74,6 +74,10 @@ public class NotificationService(
 
             // 3. Real-time push via SignalR
             var actorUser = await _dbContext.Users.FindAsync(actorUserId);
+            var targetComment = notification.TargetCommentId.HasValue
+                ? await _dbContext.Comments.FindAsync(notification.TargetCommentId.Value)
+                : null;
+
             var dto = new NotificationResponseDto
             {
                 Id = notification.Id,
@@ -84,6 +88,7 @@ public class NotificationService(
                 Type = notification.Type.ToString(),
                 TargetPostId = notification.TargetPostId,
                 TargetCommentId = notification.TargetCommentId,
+                ParentCommentId = targetComment?.ParentCommentId,
                 IsRead = notification.IsRead,
                 CreatedAt = notification.CreatedAt
             };
