@@ -10,6 +10,7 @@ public class NotificationResponseDto
     public string Type { get; set; } = string.Empty;
     public int? TargetPostId { get; set; }
     public int? TargetCommentId { get; set; }
+    public int? ParentCommentId { get; set; }
     public bool IsRead { get; set; }
     public DateTime CreatedAt { get; set; }
 }
