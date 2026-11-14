@@ -11,11 +11,16 @@ public class BrevoEmailSender : IBrevoEmailSender
 
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<BrevoEmailSender> _logger;
 
-    public BrevoEmailSender(HttpClient httpClient, IConfiguration configuration)
+    public BrevoEmailSender(
+        HttpClient httpClient,
+        IConfiguration configuration,
+        ILogger<BrevoEmailSender> logger)
     {
         _httpClient = httpClient;
         _configuration = configuration;
+        _logger = logger;
     }
 
     public async Task SendVerificationEmailAsync(int userId, string email, string verificationToken)
@@ -135,11 +140,16 @@ public class BrevoEmailSender : IBrevoEmailSender
 
         if (!string.IsNullOrWhiteSpace(smtpPassword))
         {
+            var cleanPassword = smtpPassword.Replace(" ", "").Trim();
+            _logger.LogInformation(
+                "Dispatching email to {Email} via Google Direct SMTP ({Host}:{Port})...",
+                toEmail, smtpHost, smtpPort);
+
             // Send via Google SMTP (Direct Google DKIM signature -> Lands in Primary Inbox)
             using var client = new SmtpClient(smtpHost, smtpPort)
             {
                 EnableSsl = true,
-                Credentials = new NetworkCredential(smtpEmail, smtpPassword.Trim())
+                Credentials = new NetworkCredential(smtpEmail, cleanPassword)
             };
 
             using var mail = new MailMessage
@@ -152,8 +162,13 @@ public class BrevoEmailSender : IBrevoEmailSender
             mail.To.Add(toEmail);
 
             await client.SendMailAsync(mail);
+            _logger.LogInformation("Email successfully delivered to {Email} via Google SMTP.", toEmail);
             return;
         }
+
+        _logger.LogWarning(
+            "Smtp:AppPassword is not configured. Falling back to Brevo API for {Email} (may land in spam without custom domain DKIM)...",
+            toEmail);
 
         // Fallback to Brevo API if Smtp:AppPassword is not set
         var apiKey = _configuration["Brevo:ApiKey"]
