@@ -9,6 +9,10 @@ public class BrevoEmailSender : IBrevoEmailSender
 {
     private const string BrevoEndpoint = "https://api.brevo.com/v3/smtp/email";
 
+    private static string? _cachedAccessToken;
+    private static DateTime _tokenExpiry = DateTime.MinValue;
+    private static readonly SemaphoreSlim _tokenLock = new(1, 1);
+
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _configuration;
     private readonly ILogger<BrevoEmailSender> _logger;
@@ -131,8 +135,122 @@ public class BrevoEmailSender : IBrevoEmailSender
 </html>";
     }
 
+    private async Task<string> GetGmailAccessTokenAsync(string clientId, string clientSecret, string refreshToken)
+    {
+        if (!string.IsNullOrWhiteSpace(_cachedAccessToken) && DateTime.UtcNow < _tokenExpiry)
+        {
+            return _cachedAccessToken;
+        }
+
+        await _tokenLock.WaitAsync();
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(_cachedAccessToken) && DateTime.UtcNow < _tokenExpiry)
+            {
+                return _cachedAccessToken;
+            }
+
+            using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, "https://oauth2.googleapis.com/token")
+            {
+                Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["client_id"] = clientId,
+                    ["client_secret"] = clientSecret,
+                    ["refresh_token"] = refreshToken,
+                    ["grant_type"] = "refresh_token"
+                })
+            };
+
+            using var response = await _httpClient.SendAsync(tokenRequest);
+            var responseJson = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new InvalidOperationException($"Failed to refresh Gmail access token: {responseJson}");
+            }
+
+            using var doc = JsonDocument.Parse(responseJson);
+            var accessToken = doc.RootElement.GetProperty("access_token").GetString()
+                ?? throw new InvalidOperationException("access_token was null in Google OAuth response.");
+
+            var expiresIn = doc.RootElement.TryGetProperty("expires_in", out var expProp) ? expProp.GetInt32() : 3600;
+
+            _cachedAccessToken = accessToken;
+            _tokenExpiry = DateTime.UtcNow.AddSeconds(Math.Max(60, expiresIn - 120));
+
+            return accessToken;
+        }
+        finally
+        {
+            _tokenLock.Release();
+        }
+    }
+
+    private async Task SendViaGmailApiAsync(
+        string toEmail,
+        string subject,
+        string htmlContent,
+        string clientId,
+        string clientSecret,
+        string refreshToken,
+        string senderEmail)
+    {
+        var accessToken = await GetGmailAccessTokenAsync(clientId, clientSecret, refreshToken);
+
+        var rfc822 = $"From: Marshmallow <{senderEmail}>\r\n" +
+                     $"To: {toEmail}\r\n" +
+                     $"Subject: {subject}\r\n" +
+                     "MIME-Version: 1.0\r\n" +
+                     "Content-Type: text/html; charset=utf-8\r\n\r\n" +
+                     htmlContent;
+
+        var rawBytes = Encoding.UTF8.GetBytes(rfc822);
+        var base64Url = Convert.ToBase64String(rawBytes)
+            .Replace('+', '-')
+            .Replace('/', '_')
+            .TrimEnd('=');
+
+        var payload = JsonSerializer.Serialize(new { raw = base64Url });
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://gmail.googleapis.com/gmail/v1/users/me/messages/send")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+        using var response = await _httpClient.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            var err = await response.Content.ReadAsStringAsync();
+            throw new InvalidOperationException($"Gmail API error ({response.StatusCode}): {err}");
+        }
+
+        _logger.LogInformation("Email successfully delivered to {Email} via Google Gmail REST API (Primary Inbox guaranteed).", toEmail);
+    }
+
     private async Task SendEmailAsync(string toEmail, string subject, string htmlContent)
     {
+        var gmailClientId = _configuration["Gmail:ClientId"];
+        var gmailClientSecret = _configuration["Gmail:ClientSecret"];
+        var gmailRefreshToken = _configuration["Gmail:RefreshToken"];
+        var gmailSenderEmail = _configuration["Gmail:SenderEmail"] ?? "maroo30303030@gmail.com";
+
+        // Priority 1: Google Gmail REST API (HTTPS port 443 -> Works on Render Free Tier + Lands 100% in Primary Inbox)
+        if (!string.IsNullOrWhiteSpace(gmailClientId) &&
+            !string.IsNullOrWhiteSpace(gmailClientSecret) &&
+            !string.IsNullOrWhiteSpace(gmailRefreshToken))
+        {
+            try
+            {
+                _logger.LogInformation("Dispatching email to {Email} via Google Gmail REST API (Port 443)...", toEmail);
+                await SendViaGmailApiAsync(toEmail, subject, htmlContent, gmailClientId, gmailClientSecret, gmailRefreshToken, gmailSenderEmail);
+                return;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Gmail REST API dispatch failed for {Email}. Falling back to next email channel...", toEmail);
+            }
+        }
+
         var smtpPassword = _configuration["Smtp:AppPassword"];
         var smtpEmail = _configuration["Smtp:SenderEmail"] ?? "maroo30303030@gmail.com";
         var smtpHost = _configuration["Smtp:Host"] ?? "smtp.gmail.com";
@@ -140,8 +258,7 @@ public class BrevoEmailSender : IBrevoEmailSender
 
         var isRender = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("RENDER"));
 
-        // Render's free tier blocks outbound SMTP ports (25, 465, 587).
-        // If running on Render, skip blocked SMTP directly and use Brevo REST API over HTTPS (Port 443).
+        // Priority 2: Google Direct SMTP (Port 587) - Skip on Render Free Tier where SMTP is blocked
         if (!isRender && !string.IsNullOrWhiteSpace(smtpPassword))
         {
             try
@@ -151,7 +268,6 @@ public class BrevoEmailSender : IBrevoEmailSender
                     "Dispatching email to {Email} via Google Direct SMTP ({Host}:{Port})...",
                     toEmail, smtpHost, smtpPort);
 
-                // Send via Google SMTP (Direct Google DKIM signature -> Lands in Primary Inbox)
                 using var client = new SmtpClient(smtpHost, smtpPort)
                 {
                     EnableSsl = true,
@@ -168,7 +284,6 @@ public class BrevoEmailSender : IBrevoEmailSender
                 };
                 mail.To.Add(toEmail);
 
-                // Use WaitAsync to strictly enforce timeout against network/firewall hangs
                 await client.SendMailAsync(mail).WaitAsync(TimeSpan.FromSeconds(5));
                 _logger.LogInformation("Email successfully delivered to {Email} via Google SMTP.", toEmail);
                 return;
@@ -188,9 +303,9 @@ public class BrevoEmailSender : IBrevoEmailSender
                 : "Dispatching email to {Email} via Brevo HTTP API (Port 443)...",
             toEmail);
 
-        // Fallback to Brevo API if Smtp:AppPassword is not set, or on Render, or if SMTP failed
+        // Priority 3: Brevo REST API (HTTPS Port 443 fallback)
         var apiKey = _configuration["Brevo:ApiKey"]
-                       ?? throw new InvalidOperationException("Neither SMTP nor Brevo API is configured.");
+                       ?? throw new InvalidOperationException("Neither Gmail API, SMTP, nor Brevo API is configured.");
 
         var emailData = new
         {
