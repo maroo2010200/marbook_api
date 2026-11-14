@@ -20,7 +20,8 @@ public class AuthController(
     ILogger<AuthController> logger,
     IEmailVerificationService emailVerificationService,
     IBrevoEmailSender brevoEmailSender,
-    HybridCache cache) : ControllerBase
+    HybridCache cache,
+    IServiceScopeFactory scopeFactory) : ControllerBase
 {
     private readonly AppDbContext _dbContext = dbContext;
     private readonly IJwtService _jwtService = jwtService;
@@ -28,6 +29,7 @@ public class AuthController(
     private readonly IEmailVerificationService _emailVerificationService = emailVerificationService;
     private readonly IBrevoEmailSender _brevoEmailSender = brevoEmailSender;
     private readonly HybridCache _cache = cache;
+    private readonly IServiceScopeFactory _scopeFactory = scopeFactory;
 
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)
@@ -87,7 +89,23 @@ public class AuthController(
 
         var verificationToken = await _emailVerificationService.GenerateTokenAsync(user.Id);
 
-        await _emailVerificationService.SendVerificationEmailAsync(user.Id, user.Email, verificationToken);
+        var userId = user.Id;
+        var userEmail = user.Email;
+
+        // Dispatch verification email in the background so registration completes in < 150ms
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var emailService = scope.ServiceProvider.GetRequiredService<IEmailVerificationService>();
+                await emailService.SendVerificationEmailAsync(userId, userEmail, verificationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Background verification email dispatch failed for user {UserId} ({Email})", userId, userEmail);
+            }
+        });
 
         var (token, expiresAt) = _jwtService.GenerateToken(user);
 
@@ -238,15 +256,25 @@ public class AuthController(
         _dbContext.PasswordResets.Add(passwordReset);
         await _dbContext.SaveChangesAsync();
 
-        try
+        var userId = user.Id;
+        var userEmail = user.Email;
+        var username = user.Username;
+
+        // Dispatch password reset email in the background so request completes instantly
+        _ = Task.Run(async () =>
         {
-            await _brevoEmailSender.SendPasswordResetEmailAsync(user.Id, user.Email, token);
-            _logger.LogUserAction("PasswordResetRequested", user.Id, user.Username, "User", user.Id);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to send password reset email to {Email}", user.Email);
-        }
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var emailSender = scope.ServiceProvider.GetRequiredService<IBrevoEmailSender>();
+                await emailSender.SendPasswordResetEmailAsync(userId, userEmail, token);
+                _logger.LogUserAction("PasswordResetRequested", userId, username, "User", userId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Background password reset dispatch failed for {Email}", userEmail);
+            }
+        });
 
         return Ok(new { message = genericMessage });
     }
