@@ -73,6 +73,7 @@ public class NotificationsController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPut("{id:int}/read")]
+    [HttpPatch("{id:int}/read")]
     public async Task<IActionResult> MarkAsRead(int id)
     {
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -95,6 +96,7 @@ public class NotificationsController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPut("read-all")]
+    [HttpPatch("read-all")]
     public async Task<IActionResult> MarkAllAsRead()
     {
         var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);

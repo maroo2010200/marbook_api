@@ -321,15 +321,11 @@ namespace MarbookApi.Controllers
         }
 
         [HttpPut("/api/comments/{commentId:int}")]
+        [HttpPatch("/api/comments/{commentId:int}")]
         public async Task<ActionResult<CommentResponseDto>> UpdateComment(
             int commentId,
             CommentUpdateDto commentUpdateDto)
         {
-            if (string.IsNullOrWhiteSpace(commentUpdateDto.Content) && string.IsNullOrWhiteSpace(commentUpdateDto.ImageUrl))
-            {
-                return BadRequest("Comment must contain either text or an image/GIF.");
-            }
-
             var query = _dbContext.Comments.Include(c => c.User).AsQueryable();
             
             var comment = await query.FirstOrDefaultAsync(c => c.Id == commentId);
@@ -345,11 +341,21 @@ namespace MarbookApi.Controllers
                 return Forbid();
             }
 
-            comment.Content = commentUpdateDto.Content?.Trim() ?? string.Empty;
-            if (commentUpdateDto.ImageUrl != null)
+            var newContent = commentUpdateDto.Content != null
+                ? commentUpdateDto.Content.Trim()
+                : comment.Content;
+
+            var newImageUrl = commentUpdateDto.ImageUrl != null
+                ? (string.IsNullOrWhiteSpace(commentUpdateDto.ImageUrl) ? null : commentUpdateDto.ImageUrl.Trim())
+                : comment.ImageUrl;
+
+            if (string.IsNullOrWhiteSpace(newContent) && string.IsNullOrWhiteSpace(newImageUrl))
             {
-                comment.ImageUrl = string.IsNullOrWhiteSpace(commentUpdateDto.ImageUrl) ? null : commentUpdateDto.ImageUrl.Trim();
+                return BadRequest("Comment must contain either text or an image/GIF.");
             }
+
+            comment.Content = newContent;
+            comment.ImageUrl = newImageUrl;
             comment.UpdatedAt = DateTime.UtcNow;
 
             await _dbContext.SaveChangesAsync();

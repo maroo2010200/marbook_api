@@ -719,6 +719,7 @@ namespace MarbookApi.Controllers
         }
 
         [HttpPut("{id:int}")]
+        [HttpPatch("{id:int}")]
         public async Task<ActionResult<PostResponseDto>> UpdatePost(int id, PostUpdateDto postDto)
         {
             var post = await _dbContext.Posts
@@ -738,7 +739,9 @@ namespace MarbookApi.Controllers
                 return Forbid();
             }
 
-            var trimmedContent = postDto.Content?.Trim() ?? string.Empty;
+            var trimmedContent = postDto.Content != null
+                ? postDto.Content.Trim()
+                : post.Content;
             var finalImages = postDto.ImageUrls != null
                 ? postDto.ImageUrls.Where(u => !string.IsNullOrWhiteSpace(u)).ToList()
                 : post.Images.Select(i => i.Url).ToList();
@@ -749,7 +752,10 @@ namespace MarbookApi.Controllers
                 return BadRequest("Post must contain text content or at least one image.");
             }
 
-            post.Content = trimmedContent;
+            if (postDto.Content != null)
+            {
+                post.Content = trimmedContent;
+            }
             if (postDto.Visibility.HasValue)
             {
                 post.Visibility = postDto.Visibility.Value;
