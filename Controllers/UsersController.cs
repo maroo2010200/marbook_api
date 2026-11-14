@@ -151,7 +151,7 @@ namespace MarbookApi.Controllers
                 Bio = u.Bio,
                 AvatarUrl = u.AvatarUrl,
                 CoverUrl = u.CoverUrl,
-                IsEmailVerified = false,
+                IsEmailVerified = u.IsEmailVerified,
                 Birthdate = (u.IsBirthdatePrivate && currentUserId != u.Id) ? null : u.Birthdate,
                 IsBirthdatePrivate = u.IsBirthdatePrivate,
                 CreatedAt = u.CreatedAt,
@@ -223,85 +223,6 @@ namespace MarbookApi.Controllers
             }
 
             return Ok(response.ForViewer(GetCurrentUserId() == response.Id));
-        }
-
-        [HttpPost]
-        public async Task<ActionResult<User>> CreateUser(UserCreateDto userDto)
-        {
-            var emailExist = await _dbContext.Users.AnyAsync(u => u.Email == userDto.Email);
-            if (emailExist)
-            {
-                return BadRequest("Email already exists.");
-            }
-
-            var user = new User
-            {
-                Name = userDto.Name,
-                Username = userDto.Username,
-                Email = userDto.Email,
-                Bio = null,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(userDto.Password),
-                Birthdate = userDto.Birthdate,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-
-            _dbContext.Users.Add(user);
-            await _dbContext.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetUser), new { id = user.Id }, user);
-        }
-
-        [HttpPut("{id:int}")]
-        public async Task<ActionResult<User>> UpdateUser(int id, UserUpdateDto userDto)
-        {
-            var user = await _dbContext.Users.FindAsync(id);
-            if (user == null)
-            {
-                return NotFound();
-            }
-
-            bool emailExist = await _dbContext.Users.AnyAsync(u => u.Email == userDto.Email && u.Id != id);
-            if (emailExist)
-            {
-                return BadRequest("Email already exists.");
-            }
-
-            user.Name = userDto.Name;
-            user.Email = userDto.Email;
-            user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(userDto.Password);
-            user.Birthdate = userDto.Birthdate;
-
-            if (userDto.Username != null)
-            {
-                user.Username = userDto.Username;
-            }
-            user.UpdatedAt = DateTime.UtcNow;
-
-            await _dbContext.SaveChangesAsync();
-
-            // Invalidate all cached data for this user
-            await _cache.RemoveByTagAsync($"user-{id}");
-
-            return Ok(user);
-        }
-
-        [HttpDelete("{id:int}")]
-        public async Task<IActionResult> DeleteUser(int id)
-        {
-            var user = await _dbContext.Users.FindAsync(id);
-            if (user == null)
-            {
-                return NotFound();
-            }
-
-            _dbContext.Users.Remove(user);
-            await _dbContext.SaveChangesAsync();
-
-            // Invalidate all cached data for this user
-            await _cache.RemoveByTagAsync($"user-{id}");
-
-            return NoContent();
         }
 
         [HttpPost("change-password")]

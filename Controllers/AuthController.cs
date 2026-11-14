@@ -6,6 +6,7 @@ using MarbookApi.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Hybrid;
 using System.Security.Cryptography;
 
 namespace MarbookApi.Controllers;
@@ -18,13 +19,15 @@ public class AuthController(
     IJwtService jwtService,
     ILogger<AuthController> logger,
     IEmailVerificationService emailVerificationService,
-    IBrevoEmailSender brevoEmailSender) : ControllerBase
+    IBrevoEmailSender brevoEmailSender,
+    HybridCache cache) : ControllerBase
 {
     private readonly AppDbContext _dbContext = dbContext;
     private readonly IJwtService _jwtService = jwtService;
     private readonly ILogger _logger = logger;
     private readonly IEmailVerificationService _emailVerificationService = emailVerificationService;
     private readonly IBrevoEmailSender _brevoEmailSender = brevoEmailSender;
+    private readonly HybridCache _cache = cache;
 
     [HttpPost("register")]
     public async Task<ActionResult<AuthResponseDto>> Register(RegisterDto dto)
@@ -145,6 +148,8 @@ public class AuthController(
         {
             return BadRequest(new { message = "User not found." });
         }
+
+        await _cache.RemoveByTagAsync($"user-{userId}");
 
         var (Token, ExpiresAt) = _jwtService.GenerateToken(user);
 
