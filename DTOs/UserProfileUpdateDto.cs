@@ -4,9 +4,8 @@ namespace MarbookApi.DTOs;
 
 public class UserProfileUpdateDto
 {
-    [Required]
     [MaxLength(50)]
-    public string Name { get; set; } = string.Empty;
+    public string? Name { get; set; }
 
     [MaxLength(30)]
     public string? Username { get; set; }
@@ -20,6 +19,6 @@ public class UserProfileUpdateDto
     [MaxLength(500)]
     public string? CoverUrl { get; set; }
 
-    public DateOnly Birthdate { get; set; }
+    public DateOnly? Birthdate { get; set; }
     public bool? IsBirthdatePrivate { get; set; }
 }

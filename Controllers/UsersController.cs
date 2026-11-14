@@ -33,6 +33,7 @@ namespace MarbookApi.Controllers
         }
 
         [HttpPut("me")]
+        [HttpPatch("me")]
         [Authorize]
         public async Task<ActionResult<UserProfileDto>> UpdateMyProfile([FromBody] UserProfileUpdateDto profileDto)
         {
@@ -57,18 +58,41 @@ namespace MarbookApi.Controllers
                 user.Username = trimmedUsername;
             }
 
-            user.Name = profileDto.Name.Trim();
-            user.Bio = profileDto.Bio?.Trim();
-            if (profileDto.Birthdate != default)
+            if (profileDto.Name != null)
             {
-                user.Birthdate = profileDto.Birthdate;
+                var trimmedName = profileDto.Name.Trim();
+                if (string.IsNullOrWhiteSpace(trimmedName))
+                {
+                    return BadRequest("Name cannot be empty.");
+                }
+                user.Name = trimmedName;
             }
+
+            if (profileDto.Bio != null)
+            {
+                user.Bio = string.IsNullOrWhiteSpace(profileDto.Bio) ? null : profileDto.Bio.Trim();
+            }
+
+            if (profileDto.Birthdate.HasValue && profileDto.Birthdate.Value != default)
+            {
+                user.Birthdate = profileDto.Birthdate.Value;
+            }
+
             if (profileDto.IsBirthdatePrivate.HasValue)
             {
                 user.IsBirthdatePrivate = profileDto.IsBirthdatePrivate.Value;
             }
-            user.AvatarUrl = string.IsNullOrWhiteSpace(profileDto.AvatarUrl) ? null : profileDto.AvatarUrl.Trim();
-            user.CoverUrl = string.IsNullOrWhiteSpace(profileDto.CoverUrl) ? null : profileDto.CoverUrl.Trim();
+
+            if (profileDto.AvatarUrl != null)
+            {
+                user.AvatarUrl = string.IsNullOrWhiteSpace(profileDto.AvatarUrl) ? null : profileDto.AvatarUrl.Trim();
+            }
+
+            if (profileDto.CoverUrl != null)
+            {
+                user.CoverUrl = string.IsNullOrWhiteSpace(profileDto.CoverUrl) ? null : profileDto.CoverUrl.Trim();
+            }
+
             user.UpdatedAt = DateTime.UtcNow;
 
             await _dbContext.SaveChangesAsync();
